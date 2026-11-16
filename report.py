@@ -88,7 +88,7 @@ class ReportGenerator:
             ('پیشنهادهای لانگ', summary.get('long_count', 0)),
             ('پیشنهادهای شورت', summary.get('short_count', 0)),
             ('مدت زمان اسکن (ثانیه)', round(summary.get('duration_sec', 0), 1)),
-            ('صرافی', config.EXCHANGE_ID.title()),
+            ('صرافی', config.EXCHANGE_PRIORITY[0].title()),
             ('', ''),
             ('وزن‌های امتیازدهی', ''),
             ('هماهنگی روند چند تایم فریم', f"{config.SCORE_WEIGHTS['trend_alignment']}%"),
