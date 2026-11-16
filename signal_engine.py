@@ -17,9 +17,11 @@ class SignalEngine:
     """موتور امتیازدهی و تولید سیگنال لانگ/شورت"""
 
     @staticmethod
-    def score_coin(coin_info: Dict, analysis: Dict, order_book_analysis: Dict) -> Dict:
+    def score_coin(coin_info: Dict, analysis: Dict, order_book_analysis: Dict,
+                   oi_data: Dict = None, news_data: Dict = None) -> Dict:
         """
         امتیازدهی جامع به یک کوین برای لانگ و شورت
+        شامل: روند، مومنتوم، نقدینگی، حجم، ساختار، OI/Funding، اخبار
         """
         weights = config.SCORE_WEIGHTS
 
@@ -130,28 +132,60 @@ class SignalEngine:
             elif ask_dist < bid_dist and ask_dist < 2:
                 ob_score_short += 15
 
+        # ---------- امتیاز OI و Funding Rate ----------
+        oi_long_bonus = 0
+        oi_short_bonus = 0
+        if oi_data:
+            oi_analysis = oi_data.get('oi_analysis', '')
+            funding_analysis = oi_data.get('funding_analysis', '')
+            funding_score = oi_data.get('funding_score', 0)
+            oi_score = oi_data.get('oi_score', 0)
+
+            # Funding منفی → حمایت لانگ
+            if funding_score > 0:
+                oi_long_bonus = funding_score * 8
+            elif funding_score < 0:
+                oi_short_bonus = abs(funding_score) * 8
+
+            # OI بالا → تایید حرکت (در جهت روند)
+            if oi_score > 0:
+                oi_long_bonus += oi_score * 2
+                oi_short_bonus += oi_score * 2
+
+        # ---------- امتیاز اخبار ----------
+        news_long_bonus = 0
+        news_short_bonus = 0
+        if news_data:
+            news_score = news_data.get('news_score', 0)
+            if news_score > 0:
+                news_long_bonus = news_score * 10
+            elif news_score < 0:
+                news_short_bonus = abs(news_score) * 10
+
         # ---------- امتیاز نهایی ----------
         long_score = (
             trend_long_score * weights['trend_alignment'] / 100 +
             momentum_long * weights['momentum'] / 100 +
             liquidity_long * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
-            ob_score_long * weights['structure'] / 100
+            ob_score_long * weights['structure'] / 100 +
+            oi_long_bonus + news_long_bonus
         )
         short_score = (
             trend_short_score * weights['trend_alignment'] / 100 +
             momentum_short * weights['momentum'] / 100 +
             liquidity_short * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
-            ob_score_short * weights['structure'] / 100
+            ob_score_short * weights['structure'] / 100 +
+            oi_short_bonus + news_short_bonus
         )
 
         # ---------- تولید دلایل ----------
         long_reasons = SignalEngine._generate_long_reasons(
-            trend, structure, state_1h, state_15m, order_book_analysis
+            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data
         )
         short_reasons = SignalEngine._generate_short_reasons(
-            trend, structure, state_1h, state_15m, order_book_analysis
+            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data
         )
 
         return {
@@ -180,7 +214,7 @@ class SignalEngine:
 
     # ----------------- تولید دلایل لانگ -----------------
     @staticmethod
-    def _generate_long_reasons(trend, structure, state_1h, state_15m, ob) -> List[str]:
+    def _generate_long_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None) -> List[str]:
         reasons = []
         if trend['alignment_pct'] > 40:
             reasons.append(f"هماهنگی روند صعودی قوی در چند تایم فریم ({trend['alignment_pct']:.0f}%)")
@@ -200,11 +234,21 @@ class SignalEngine:
             reasons.append(f"دیوار خرید قوی در فاصله {abs(ob['bid_wall_distance_pct']):.1f}% (حمایت نقدینگی)")
         if state_1h.get('volume_ratio', 1) > 1.5:
             reasons.append(f"افزایش حجم معاملات ({state_1h.get('volume_ratio', 0):.2f}x میانگین)")
+        # دلایل OI و Funding
+        if oi_data:
+            if oi_data.get('funding_score', 0) > 0:
+                reasons.append(f"Funding Rate منفی (حمایت لانگ): {oi_data.get('funding_analysis', '')}")
+            if oi_data.get('oi_usd', 0) and oi_data.get('oi_usd', 0) > 100_000_000:
+                reasons.append(f"OI بالا: ${oi_data['oi_usd']/1e6:.0f}M (نقدینگی فیوچرز قوی)")
+        # دلایل اخبار
+        if news_data:
+            if news_data.get('news_score', 0) > 0:
+                reasons.append(f"اخبار مثبت ({news_data.get('positive_count', 0)} مورد): {news_data.get('overall_sentiment', '')}")
         return reasons
 
     # ----------------- تولید دلایل شورت -----------------
     @staticmethod
-    def _generate_short_reasons(trend, structure, state_1h, state_15m, ob) -> List[str]:
+    def _generate_short_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None) -> List[str]:
         reasons = []
         if trend['alignment_pct'] < -40:
             reasons.append(f"هماهنگی روند نزولی قوی در چند تایم فریم ({abs(trend['alignment_pct']):.0f}%)")
@@ -224,6 +268,16 @@ class SignalEngine:
             reasons.append(f"دیوار فروش قوی در فاصله {abs(ob['ask_wall_distance_pct']):.1f}% (مقاومت نقدینگی)")
         if state_1h.get('volume_ratio', 1) > 1.5 and state_1h.get('trend_bearish'):
             reasons.append(f"افزایش حجم همراه با روند نزولی ({state_1h.get('volume_ratio', 0):.2f}x میانگین)")
+        # دلایل OI و Funding
+        if oi_data:
+            if oi_data.get('funding_score', 0) < 0:
+                reasons.append(f"Funding Rate مثبت (حمایت شورت): {oi_data.get('funding_analysis', '')}")
+            if oi_data.get('oi_usd', 0) and oi_data.get('oi_usd', 0) > 100_000_000:
+                reasons.append(f"OI بالا: ${oi_data['oi_usd']/1e6:.0f}M (نقدینگی فیوچرز قوی)")
+        # دلایل اخبار
+        if news_data:
+            if news_data.get('news_score', 0) < 0:
+                reasons.append(f"اخبار منفی ({news_data.get('negative_count', 0)} مورد): {news_data.get('overall_sentiment', '')}")
         return reasons
 
     # ----------------- انتخاب نهایی -----------------
