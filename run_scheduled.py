@@ -41,6 +41,8 @@ from report import ReportGenerator
 from pdf_report import generate_pdf
 from telegram_sender import TelegramSender
 from events_calendar import EconomicEventsCalendar
+from oi_funding import OIFundingAnalyzer
+from news_analyzer import NewsAnalyzer
 import copy
 
 # تنظیم لاگینگ
@@ -88,6 +90,10 @@ def run_scan_and_send():
     all_scored = []
     successful = 0
 
+    # دریافت اخبار یک بار برای همه کوین‌ها (کش می‌شود)
+    logger.info("دریافت اخبار از RSS feeds...")
+    NewsAnalyzer.fetch_all_news(max_per_source=30)
+
     for i, coin in enumerate(coins, start=1):
         symbol = coin['symbol']
         base = coin['base']
@@ -101,9 +107,26 @@ def run_scan_and_send():
             order_book = fetcher.fetch_order_book(symbol)
             ob_analysis = LiquidityAnalyzer.analyze_order_book(order_book) if order_book else None
 
-            score = SignalEngine.score_coin(coin, analysis, ob_analysis)
+            # دریافت OI و Funding Rate از Bybit
+            try:
+                oi_data = OIFundingAnalyzer.fetch_oi_and_funding(symbol)
+            except Exception as e:
+                logger.debug(f"خطا در OI {symbol}: {e}")
+                oi_data = None
+
+            # دریافت اخبار مرتبط با کوین
+            try:
+                news_data = NewsAnalyzer.get_news_for_coin(base, coin.get('name', ''))
+            except Exception as e:
+                logger.debug(f"خطا در اخبار {base}: {e}")
+                news_data = None
+
+            # امتیازدهی با همه داده‌ها
+            score = SignalEngine.score_coin(coin, analysis, ob_analysis, oi_data, news_data)
             score['_analysis'] = analysis
             score['_ob_analysis'] = ob_analysis
+            score['_oi_data'] = oi_data
+            score['_news_data'] = news_data
 
             if score['long_score'] >= score['short_score']:
                 score['setup'] = EntryExitCalculator.calculate_long_setup(analysis, ob_analysis)
