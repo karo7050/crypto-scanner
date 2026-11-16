@@ -263,8 +263,9 @@ class TelegramSender:
 
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
-                    f"   ورود: {entry} | استاپ: {stop} ({stop_pct}%)\n"
-                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}{flow_info}"
+                    f"   📍 ورود: {entry} ({setup.get('entry_strategy', '')[:40]})\n"
+                    f"   🔴 استاپ: {stop} ({stop_pct}%) - {setup.get('stop_reason', '')[:50]}\n"
+                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}"
                 )
             msg.append("")
 
@@ -324,8 +325,9 @@ class TelegramSender:
 
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
-                    f"   ورود: {entry} | استاپ: {stop} ({stop_pct}%)\n"
-                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}{flow_info}"
+                    f"   📍 ورود: {entry} ({setup.get('entry_strategy', '')[:40]})\n"
+                    f"   🔴 استاپ: {stop} ({stop_pct}%) - {setup.get('stop_reason', '')[:50]}\n"
+                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}"
                 )
             msg.append("")
 
