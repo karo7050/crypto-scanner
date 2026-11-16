@@ -261,11 +261,24 @@ class TelegramSender:
                     flow_emoji = '🟢' if net > 0 else '🔴' if net < 0 else '⚪'
                     flow_info = f"\n   {flow_emoji} Flow 24h: {net_str} ({flow_data.get('direction_en', '')})"
 
+                # BTC pair (قدرت نسبت به بیت‌کوین)
+                btc_info = ''
+                btc_data = s.get('_btc_data')
+                if btc_data and btc_data.get('available'):
+                    btc_score = btc_data.get('btc_score', 0)
+                    change_4h = btc_data.get('4h', {}).get('change_24h_vs_btc_pct', 0)
+                    if btc_score > 0:
+                        btc_emoji = '💪'  # قوی‌تر از BTC
+                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (قوی‌تر)"
+                    elif btc_score < 0:
+                        btc_emoji = '📉'  # ضعیف‌تر از BTC
+                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (ضعیف‌تر)"
+
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
                     f"   📍 ورود: {entry} ({setup.get('entry_strategy', '')[:40]})\n"
                     f"   🔴 استاپ: {stop} ({stop_pct}%) - {setup.get('stop_reason', '')[:50]}\n"
-                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}"
+                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}{btc_info}"
                 )
             msg.append("")
 
@@ -309,7 +322,7 @@ class TelegramSender:
                     funding_emoji = '🔴' if funding_rate > 0.0003 else '🟢' if funding_rate < -0.0001 else '⚪'
                     oi_info = f"\n   {funding_emoji} OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%"
 
-                # Volume Flow (ورود/خروج پول)
+                # Volume Flow
                 flow_info = ''
                 flow_data = s.get('_flow_data')
                 if flow_data:
@@ -323,11 +336,24 @@ class TelegramSender:
                     flow_emoji = '🟢' if net > 0 else '🔴' if net < 0 else '⚪'
                     flow_info = f"\n   {flow_emoji} Flow 24h: {net_str} ({flow_data.get('direction_en', '')})"
 
+                # BTC pair
+                btc_info = ''
+                btc_data = s.get('_btc_data')
+                if btc_data and btc_data.get('available'):
+                    btc_score = btc_data.get('btc_score', 0)
+                    change_4h = btc_data.get('4h', {}).get('change_24h_vs_btc_pct', 0)
+                    if btc_score > 0:
+                        btc_emoji = '💪'
+                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (قوی‌تر)"
+                    elif btc_score < 0:
+                        btc_emoji = '📉'
+                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (ضعیف‌تر)"
+
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
                     f"   📍 ورود: {entry} ({setup.get('entry_strategy', '')[:40]})\n"
                     f"   🔴 استاپ: {stop} ({stop_pct}%) - {setup.get('stop_reason', '')[:50]}\n"
-                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}"
+                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}{btc_info}"
                 )
             msg.append("")
 
@@ -335,6 +361,8 @@ class TelegramSender:
         msg.append("━━━━━━━━━━━━━━━━━━━━")
         msg.append("📊 <b>راهنمای تحلیل:</b>")
         msg.append("  🟢 حجم بالا / Funding منفی / Flow مثبت = تایید ورود")
+        msg.append("  💪 قوی‌تر از BTC = ارز از بیت‌کوین بهتر عمل می‌کند")
+        msg.append("  📉 ضعیف‌تر از BTC = ارز از بیت‌کوین بدتر عمل می‌کند")
         msg.append("  🟡 حجم متوسط = احتیاط")
         msg.append("  🔴 حجم کم / Funding مثبت / Flow منفی = هشدار")
         msg.append("  ⚪ خنثی")
