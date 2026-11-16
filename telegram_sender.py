@@ -222,7 +222,7 @@ class TelegramSender:
                 target = TelegramSender._fmt_price(setup.get('target_2', 0))
                 stop_pct = setup.get('stop_pct', 0)
 
-                # تحلیل حجم
+                # تحلیل حجم و OI/Funding
                 vol_emoji = ''
                 vol_info = ''
                 if vol_entry:
@@ -239,10 +239,18 @@ class TelegramSender:
                         vol_emoji = '⚪'
                     vol_info = f"\n   {vol_emoji} حجم 1h: {h1_vol}x | 15m: {m15_vol}x"
 
+                # OI و Funding
+                oi_info = ''
+                oi_data = s.get('_oi_data')
+                if oi_data and oi_data.get('oi_usd'):
+                    funding_rate = oi_data.get('funding_rate', 0)
+                    funding_emoji = '🔴' if funding_rate > 0.0003 else '🟢' if funding_rate < -0.0001 else '⚪'
+                    oi_info = f"\n   {funding_emoji} OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%"
+
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
                     f"   ورود: {entry} | استاپ: {stop} ({stop_pct}%)\n"
-                    f"   هدف: {target} | RR: 1:2{vol_info}"
+                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}"
                 )
             msg.append("")
 
@@ -261,7 +269,7 @@ class TelegramSender:
                 target = TelegramSender._fmt_price(setup.get('target_2', 0))
                 stop_pct = setup.get('stop_pct', 0)
 
-                # تحلیل حجم
+                # تحلیل حجم و OI/Funding
                 vol_emoji = ''
                 vol_info = ''
                 if vol_entry:
@@ -278,20 +286,28 @@ class TelegramSender:
                         vol_emoji = '⚪'
                     vol_info = f"\n   {vol_emoji} حجم 1h: {h1_vol}x | 15m: {m15_vol}x"
 
+                # OI و Funding
+                oi_info = ''
+                oi_data = s.get('_oi_data')
+                if oi_data and oi_data.get('oi_usd'):
+                    funding_rate = oi_data.get('funding_rate', 0)
+                    funding_emoji = '🔴' if funding_rate > 0.0003 else '🟢' if funding_rate < -0.0001 else '⚪'
+                    oi_info = f"\n   {funding_emoji} OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%"
+
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
                     f"   ورود: {entry} | استاپ: {stop} ({stop_pct}%)\n"
-                    f"   هدف: {target} | RR: 1:2{vol_info}"
+                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}"
                 )
             msg.append("")
 
-        # راهنمای حجم
+        # راهنمای حجم و OI
         msg.append("━━━━━━━━━━━━━━━━━━━━")
-        msg.append("📊 <b>راهنمای تحلیل حجم:</b>")
-        msg.append("  🟢 حجم بالا = تایید ورود")
+        msg.append("📊 <b>راهنمای تحلیل:</b>")
+        msg.append("  🟢 حجم بالا / Funding منفی = تایید ورود")
         msg.append("  🟡 حجم متوسط = احتیاط")
-        msg.append("  🔴 حجم کم/کاهشی = هشدار خروج")
-        msg.append("  ⚪ حجم نرمال = خنثی")
+        msg.append("  🔴 حجم کم / Funding مثبت = هشدار")
+        msg.append("  ⚪ حجم نرمال / Funding متعادل = خنثی")
 
         # رویداد اقتصادی
         if event_guidance and event_guidance.get('has_events'):
