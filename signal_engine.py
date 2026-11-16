@@ -18,10 +18,10 @@ class SignalEngine:
 
     @staticmethod
     def score_coin(coin_info: Dict, analysis: Dict, order_book_analysis: Dict,
-                   oi_data: Dict = None, news_data: Dict = None) -> Dict:
+                   oi_data: Dict = None, news_data: Dict = None, flow_data: Dict = None) -> Dict:
         """
         امتیازدهی جامع به یک کوین برای لانگ و شورت
-        شامل: روند، مومنتوم، نقدینگی، حجم، ساختار، OI/Funding، اخبار
+        شامل: روند، مومنتوم، نقدینگی، حجم، ساختار، OI/Funding، اخبار، Volume Flow
         """
         weights = config.SCORE_WEIGHTS
 
@@ -162,6 +162,16 @@ class SignalEngine:
             elif news_score < 0:
                 news_short_bonus = abs(news_score) * 10
 
+        # ---------- امتیاز Volume Flow (Inflow/Outflow) ----------
+        flow_long_bonus = 0
+        flow_short_bonus = 0
+        if flow_data:
+            flow_score = flow_data.get('flow_score', 0)
+            if flow_score > 0:
+                flow_long_bonus = flow_score * 8  # ورود پول → لانگ
+            elif flow_score < 0:
+                flow_short_bonus = abs(flow_score) * 8  # خروج پول → شورت
+
         # ---------- امتیاز نهایی ----------
         long_score = (
             trend_long_score * weights['trend_alignment'] / 100 +
@@ -169,7 +179,7 @@ class SignalEngine:
             liquidity_long * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
             ob_score_long * weights['structure'] / 100 +
-            oi_long_bonus + news_long_bonus
+            oi_long_bonus + news_long_bonus + flow_long_bonus
         )
         short_score = (
             trend_short_score * weights['trend_alignment'] / 100 +
@@ -177,15 +187,15 @@ class SignalEngine:
             liquidity_short * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
             ob_score_short * weights['structure'] / 100 +
-            oi_short_bonus + news_short_bonus
+            oi_short_bonus + news_short_bonus + flow_short_bonus
         )
 
         # ---------- تولید دلایل ----------
         long_reasons = SignalEngine._generate_long_reasons(
-            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data
+            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data, flow_data
         )
         short_reasons = SignalEngine._generate_short_reasons(
-            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data
+            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data, flow_data
         )
 
         return {
@@ -214,7 +224,7 @@ class SignalEngine:
 
     # ----------------- تولید دلایل لانگ -----------------
     @staticmethod
-    def _generate_long_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None) -> List[str]:
+    def _generate_long_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None, flow_data=None) -> List[str]:
         reasons = []
         if trend['alignment_pct'] > 40:
             reasons.append(f"هماهنگی روند صعودی قوی در چند تایم فریم ({trend['alignment_pct']:.0f}%)")
@@ -244,11 +254,20 @@ class SignalEngine:
         if news_data:
             if news_data.get('news_score', 0) > 0:
                 reasons.append(f"اخبار مثبت ({news_data.get('positive_count', 0)} مورد): {news_data.get('overall_sentiment', '')}")
+        # دلایل Volume Flow
+        if flow_data:
+            if flow_data.get('flow_score', 0) > 0:
+                net = flow_data.get('net_flow_24h_usd', 0)
+                if abs(net) >= 1e6:
+                    net_str = f"${net/1e6:.1f}M"
+                else:
+                    net_str = f"${net/1e3:.0f}K"
+                reasons.append(f"ورود پول خالص 24h: {net_str} ({flow_data.get('flow_signal', '')})")
         return reasons
 
     # ----------------- تولید دلایل شورت -----------------
     @staticmethod
-    def _generate_short_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None) -> List[str]:
+    def _generate_short_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None, flow_data=None) -> List[str]:
         reasons = []
         if trend['alignment_pct'] < -40:
             reasons.append(f"هماهنگی روند نزولی قوی در چند تایم فریم ({abs(trend['alignment_pct']):.0f}%)")
@@ -278,6 +297,15 @@ class SignalEngine:
         if news_data:
             if news_data.get('news_score', 0) < 0:
                 reasons.append(f"اخبار منفی ({news_data.get('negative_count', 0)} مورد): {news_data.get('overall_sentiment', '')}")
+        # دلایل Volume Flow
+        if flow_data:
+            if flow_data.get('flow_score', 0) < 0:
+                net = flow_data.get('net_flow_24h_usd', 0)
+                if abs(net) >= 1e6:
+                    net_str = f"${net/1e6:.1f}M"
+                else:
+                    net_str = f"${abs(net)/1e3:.0f}K"
+                reasons.append(f"خروج پول خالص 24h: {net_str} ({flow_data.get('flow_signal', '')})")
         return reasons
 
     # ----------------- انتخاب نهایی -----------------
