@@ -220,7 +220,7 @@ def generate_pdf(signals: Dict, all_scored: list, scan_summary: Dict) -> str:
         [fa('پیشنهادهای لانگ'), str(scan_summary.get('long_count', 0))],
         [fa('پیشنهادهای شورت'), str(scan_summary.get('short_count', 0))],
         [fa('مدت زمان اسکن'), f"{round(scan_summary.get('duration_sec', 0), 1)} ثانیه"],
-        [fa('صرافی'), config.EXCHANGE_ID.title()],
+        [fa('صرافی'), config.EXCHANGE_PRIORITY[0].title()],
     ]
 
     summary_table = Table(summary_data, colWidths=[6 * cm, 10 * cm])
