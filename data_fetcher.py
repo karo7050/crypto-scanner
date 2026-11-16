@@ -20,16 +20,37 @@ logger = logging.getLogger(__name__)
 
 class DataFetcher:
     def __init__(self):
-        # راه‌اندازی صرافی (Bybit به جای Binance به دلیل مسدودیت IP)
-        exchange_class = getattr(ccxt, config.EXCHANGE_ID)
-        self.exchange = exchange_class({
-            'apiKey': config.EXCHANGE_API_KEY,
-            'secret': config.EXCHANGE_API_SECRET,
-            'enableRateLimit': True,
-            'options': {'defaultType': 'spot'}
-        })
-        self.exchange.load_markets()
-        logger.info(f"اتصال به {config.EXCHANGE_ID.title()} برقرار شد - {len(self.exchange.symbols)} سیمبل")
+        # تلاش برای اتصال به صرافی‌های مختلف تا یافتن یکی که کار می‌کند
+        self.exchange = None
+        self.exchange_id = None
+        self._connect_to_exchange()
+
+    def _connect_to_exchange(self):
+        """اتصال به اولین صرافی در دسترس از لیست اولویت"""
+        for ex_id in config.EXCHANGE_PRIORITY:
+            try:
+                logger.info(f"تلاش برای اتصال به {ex_id.title()}...")
+                exchange_class = getattr(ccxt, ex_id)
+                ex = exchange_class({
+                    'apiKey': config.EXCHANGE_API_KEY,
+                    'secret': config.EXCHANGE_API_SECRET,
+                    'enableRateLimit': True,
+                    'options': {'defaultType': 'spot'}
+                })
+                ex.load_markets()
+                # تست با دریافت یک OHLCV ساده
+                test_ohlcv = ex.fetch_ohlcv('BTC/USDT', '1h', limit=2)
+                if test_ohlcv:
+                    self.exchange = ex
+                    self.exchange_id = ex_id
+                    logger.info(f"✓ متصل به {ex_id.title()} - {len(ex.symbols)} سیمبل")
+                    return
+            except Exception as e:
+                logger.warning(f"✗ {ex_id.title()} در دسترس نیست: {str(e)[:100]}")
+                continue
+
+        if self.exchange is None:
+            raise RuntimeError("هیچ صرافی در دسترس نیست! بررسی اتصال اینترنت.")
 
     # ----------------- دریافت لیست کوین‌ها با مارکت کپ -----------------
     def fetch_top_market_cap_coins(self) -> List[Dict]:
@@ -141,7 +162,7 @@ class DataFetcher:
                     'total_volume': coin.get('total_volume', 0),
                 })
 
-        logger.info(f"کوین‌های قابل معامله در {config.EXCHANGE_ID.title()}: {len(matched)}")
+        logger.info(f"کوین‌های قابل معامله در {self.exchange_id.title()}: {len(matched)}")
         return matched[:config.MAX_COINS_TO_SCAN]
 
     def _fallback_top_volume_coins(self) -> List[Dict]:
