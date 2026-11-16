@@ -43,6 +43,7 @@ from telegram_sender import TelegramSender
 from events_calendar import EconomicEventsCalendar
 from oi_funding import OIFundingAnalyzer
 from news_analyzer import NewsAnalyzer
+from volume_flow import VolumeFlowAnalyzer
 import copy
 
 # تنظیم لاگینگ
@@ -121,12 +122,24 @@ def run_scan_and_send():
                 logger.debug(f"خطا در اخبار {base}: {e}")
                 news_data = None
 
+            # محاسبه Volume Flow (ورود/خروج پول) از داده 1h
+            try:
+                tf_1h_df = timeframes_data.get('1h')
+                if tf_1h_df is not None:
+                    flow_data = VolumeFlowAnalyzer.compute_flow(tf_1h_df)
+                else:
+                    flow_data = None
+            except Exception as e:
+                logger.debug(f"خطا در Volume Flow {base}: {e}")
+                flow_data = None
+
             # امتیازدهی با همه داده‌ها
-            score = SignalEngine.score_coin(coin, analysis, ob_analysis, oi_data, news_data)
+            score = SignalEngine.score_coin(coin, analysis, ob_analysis, oi_data, news_data, flow_data)
             score['_analysis'] = analysis
             score['_ob_analysis'] = ob_analysis
             score['_oi_data'] = oi_data
             score['_news_data'] = news_data
+            score['_flow_data'] = flow_data
 
             if score['long_score'] >= score['short_score']:
                 score['setup'] = EntryExitCalculator.calculate_long_setup(analysis, ob_analysis)
