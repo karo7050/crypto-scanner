@@ -30,47 +30,65 @@ class EntryExitCalculator:
         state_1h = tf_1h.get('state', {})
         sr_1h = tf_1h.get('sr', {})
 
+        # برای Swing: استفاده از داده‌های 4h و روزانه
+        tf_4h = analysis.get('4h', {})
+        tf_1d = analysis.get('1d', {})
+        state_4h = tf_4h.get('state', {}) if tf_4h else {}
+        state_1d = tf_1d.get('state', {}) if tf_1d else {}
+        sr_4h = tf_4h.get('sr', {}) if tf_4h else {}
+        sr_1d = tf_1d.get('sr', {}) if tf_1d else {}
+
         current_price = state_15m.get('close', 0)
         atr_15m = state_15m.get('atr', current_price * 0.02)
         atr_1h = state_1h.get('atr', current_price * 0.03)
+        # Swing: ATR 4h (وسیع‌تر برای استاپ‌های Swing)
+        atr_4h = state_4h.get('atr', atr_1h * 1.5) if state_4h else atr_1h * 1.5
+        atr_1d = state_1d.get('atr', atr_4h * 1.5) if state_1d else atr_4h * 1.5
 
         # ---------- نقطه ورود ----------
-        # سه سناریو برای ورود لانگ
-        nearest_support = sr_1h.get('nearest_support', current_price * 0.98)
-        nearest_resistance = sr_1h.get('nearest_resistance', current_price * 1.02)
+        # Swing: استفاده از سطوح 4h و روزانه برای حمایت/مقاومت
+        if config.SWING_USE_DAILY_LEVELS and sr_1d:
+            nearest_support = sr_1d.get('nearest_support', sr_4h.get('nearest_support', current_price * 0.95))
+            nearest_resistance = sr_1d.get('nearest_resistance', sr_4h.get('nearest_resistance', current_price * 1.05))
+        elif sr_4h:
+            nearest_support = sr_4h.get('nearest_support', sr_1h.get('nearest_support', current_price * 0.97))
+            nearest_resistance = sr_4h.get('nearest_resistance', sr_1h.get('nearest_resistance', current_price * 1.03))
+        else:
+            nearest_support = sr_1h.get('nearest_support', current_price * 0.98)
+            nearest_resistance = sr_1h.get('nearest_resistance', current_price * 1.02)
 
         # سناریو 1: ورود در قیمت فعلی (اگر روند صعودی تأیید شده)
         entry_now = current_price
 
-        # سناریو 2: ورود در پولبک به حمایت
-        entry_pullback = nearest_support * 1.005  # کمی بالاتر از حمایت
+        # سناریو 2: ورود در پولبک به حمایت (Swing - پولبک عمیق‌تر)
+        entry_pullback = nearest_support * 1.01  # کمی بالاتر از حمایت روزانه/4h
 
         # سناریو 3: ورود در شکست مقاومت
         entry_breakout = nearest_resistance * 1.005
 
-        # انتخاب بهترین نقطه ورود
-        # اگر قیمت نزدیک حمایت باشد → پولبک
-        # اگر قیمت نزدیک شکست مقاومت باشد → شکست
-        # در غیر این صورت → ورود فعلی
+        # انتخاب بهترین نقطه ورود (Swing: تلورانس بیشتر برای پولبک)
         dist_to_support = (current_price - nearest_support) / current_price * 100
         dist_to_resistance = (nearest_resistance - current_price) / current_price * 100
 
-        if dist_to_support < 2:
+        if dist_to_support < 5:  # Swing: پولبک تا 5% از قیمت فعلی
             recommended_entry = entry_pullback
-            entry_strategy = "ورود در پولبک به حمایت (نزدیک نقطه حمایت هستیم)"
-        elif dist_to_resistance < 1.5:
+            entry_strategy = "Swing: ورود در پولبک به حمایت ساختاری (4h/روزانه)"
+        elif dist_to_resistance < 2:
             recommended_entry = entry_breakout
-            entry_strategy = "ورود بعد از شکست مقاومت (نزدیک نقطه شکست هستیم)"
+            entry_strategy = "Swing: ورود بعد از شکست مقاومت ساختاری"
         else:
             recommended_entry = entry_now
-            entry_strategy = "ورود در قیمت فعلی (تأیید روند صعودی)"
+            entry_strategy = "Swing: ورود در قیمت فعلی (تأیید روند صعودی 4h)"
 
-        # ---------- استاپ لاس ----------
-        # روش 1: ATR-based
-        atr_stop = recommended_entry - (atr_1h * config.ATR_STOP_MULTIPLIER)
+        # ---------- استاپ لاس (Swing) ----------
+        # Swing: استفاده از ATR 4h (وسیع‌تر) به جای 1h
+        atr_for_stop = atr_4h if config.SWING_USE_4H_ATR else atr_1h
 
-        # روش 2: زیر حمایت نزدیک
-        sr_stop = nearest_support * 0.995
+        # روش 1: ATR-based (Swing - وسیع‌تر)
+        atr_stop = recommended_entry - (atr_for_stop * config.ATR_STOP_MULTIPLIER)
+
+        # روش 2: زیر حمایت ساختاری (Swing - با حاشیه بیشتر)
+        sr_stop = nearest_support * 0.99  # 1% زیر حمایت (Swing)
 
         # روش 3: دیوار خرید Order Book (اگر موجود باشد)
         ob_stop = None
@@ -81,11 +99,12 @@ class EntryExitCalculator:
         stops = [s for s in [atr_stop, sr_stop, ob_stop] if s is not None and s < recommended_entry]
         recommended_stop = max(stops) if stops else atr_stop
 
-        # ---------- هدف سود ----------
+        # ---------- هدف سود (Swing) ----------
+        # Swing: اهداف بزرگ‌تر برای حرکت‌های قوی‌تر
         risk = recommended_entry - recommended_stop
-        target_1 = recommended_entry + (risk * 1.5)   # RR 1:1.5
-        target_2 = recommended_entry + (risk * 2.0)   # RR 1:2
-        target_3 = recommended_entry + (risk * config.ATR_TARGET_MULTIPLIER)  # RR 1:3
+        target_1 = recommended_entry + (risk * 2.0)   # Swing: RR 1:2 (حداقل)
+        target_2 = recommended_entry + (risk * 3.0)   # Swing: RR 1:3 (اصلی)
+        target_3 = recommended_entry + (risk * config.ATR_TARGET_MULTIPLIER)  # Swing: RR 1:5 (حداکثر)
 
         # فاصله‌ها به درصد
         stop_pct = (recommended_entry - recommended_stop) / recommended_entry * 100
@@ -94,6 +113,7 @@ class EntryExitCalculator:
 
         return {
             'direction': 'LONG',
+            'style': 'Swing',
             'current_price': round(current_price, 6),
             'entry_price': round(recommended_entry, 6),
             'entry_strategy': entry_strategy,
@@ -106,6 +126,8 @@ class EntryExitCalculator:
             'risk_reward': round(rr, 2),
             'atr_15m': round(atr_15m, 6),
             'atr_1h': round(atr_1h, 6),
+            'atr_4h': round(atr_4h, 6),
+            'atr_1d': round(atr_1d, 6),
             'nearest_support': round(nearest_support, 6),
             'nearest_resistance': round(nearest_resistance, 6),
             'alt_entries': {
@@ -137,34 +159,53 @@ class EntryExitCalculator:
         state_1h = tf_1h.get('state', {})
         sr_1h = tf_1h.get('sr', {})
 
+        # برای Swing: استفاده از داده‌های 4h و روزانه
+        tf_4h = analysis.get('4h', {})
+        tf_1d = analysis.get('1d', {})
+        state_4h = tf_4h.get('state', {}) if tf_4h else {}
+        state_1d = tf_1d.get('state', {}) if tf_1d else {}
+        sr_4h = tf_4h.get('sr', {}) if tf_4h else {}
+        sr_1d = tf_1d.get('sr', {}) if tf_1d else {}
+
         current_price = state_15m.get('close', 0)
         atr_15m = state_15m.get('atr', current_price * 0.02)
         atr_1h = state_1h.get('atr', current_price * 0.03)
+        # Swing: ATR 4h (وسیع‌تر)
+        atr_4h = state_4h.get('atr', atr_1h * 1.5) if state_4h else atr_1h * 1.5
+        atr_1d = state_1d.get('atr', atr_4h * 1.5) if state_1d else atr_4h * 1.5
 
-        # ---------- نقطه ورود ----------
-        nearest_support = sr_1h.get('nearest_support', current_price * 0.98)
-        nearest_resistance = sr_1h.get('nearest_resistance', current_price * 1.02)
+        # ---------- نقطه ورود (Swing) ----------
+        if config.SWING_USE_DAILY_LEVELS and sr_1d:
+            nearest_support = sr_1d.get('nearest_support', sr_4h.get('nearest_support', current_price * 0.95))
+            nearest_resistance = sr_1d.get('nearest_resistance', sr_4h.get('nearest_resistance', current_price * 1.05))
+        elif sr_4h:
+            nearest_support = sr_4h.get('nearest_support', sr_1h.get('nearest_support', current_price * 0.97))
+            nearest_resistance = sr_4h.get('nearest_resistance', sr_1h.get('nearest_resistance', current_price * 1.03))
+        else:
+            nearest_support = sr_1h.get('nearest_support', current_price * 0.98)
+            nearest_resistance = sr_1h.get('nearest_resistance', current_price * 1.02)
 
         entry_now = current_price
-        entry_pullback = nearest_resistance * 0.995  # کمی پایین‌تر از مقاومت
-        entry_breakdown = nearest_support * 0.995    # کمی پایین‌تر از شکست حمایت
+        entry_pullback = nearest_resistance * 0.99  # Swing: کمی پایین‌تر از مقاومت ساختاری
+        entry_breakdown = nearest_support * 0.99    # Swing: شکست حمایت ساختاری
 
         dist_to_support = (current_price - nearest_support) / current_price * 100
         dist_to_resistance = (nearest_resistance - current_price) / current_price * 100
 
-        if dist_to_resistance < 2:
+        if dist_to_resistance < 5:  # Swing: پولبک تا 5%
             recommended_entry = entry_pullback
-            entry_strategy = "ورود در پولبک به مقاومت (نزدیک نقطه مقاومت هستیم)"
-        elif dist_to_support < 1.5:
+            entry_strategy = "Swing: ورود در پولبک به مقاومت ساختاری (4h/روزانه)"
+        elif dist_to_support < 2:
             recommended_entry = entry_breakdown
-            entry_strategy = "ورود بعد از شکست حمایت (نزدیک نقطه شکست هستیم)"
+            entry_strategy = "Swing: ورود بعد از شکست حمایت ساختاری"
         else:
             recommended_entry = entry_now
-            entry_strategy = "ورود در قیمت فعلی (تأیید روند نزولی)"
+            entry_strategy = "Swing: ورود در قیمت فعلی (تأیید روند نزولی 4h)"
 
-        # ---------- استاپ لاس ----------
-        atr_stop = recommended_entry + (atr_1h * config.ATR_STOP_MULTIPLIER)
-        sr_stop = nearest_resistance * 1.005
+        # ---------- استاپ لاس (Swing) ----------
+        atr_for_stop = atr_4h if config.SWING_USE_4H_ATR else atr_1h
+        atr_stop = recommended_entry + (atr_for_stop * config.ATR_STOP_MULTIPLIER)
+        sr_stop = nearest_resistance * 1.01  # Swing: 1% بالای مقاومت
 
         ob_stop = None
         if order_book and order_book.get('nearest_ask_wall', 0) > 0:
@@ -173,11 +214,11 @@ class EntryExitCalculator:
         stops = [s for s in [atr_stop, sr_stop, ob_stop] if s is not None and s > recommended_entry]
         recommended_stop = min(stops) if stops else atr_stop
 
-        # ---------- هدف سود ----------
+        # ---------- هدف سود (Swing) ----------
         risk = recommended_stop - recommended_entry
-        target_1 = recommended_entry - (risk * 1.5)
-        target_2 = recommended_entry - (risk * 2.0)
-        target_3 = recommended_entry - (risk * config.ATR_TARGET_MULTIPLIER)
+        target_1 = recommended_entry - (risk * 2.0)   # Swing: RR 1:2
+        target_2 = recommended_entry - (risk * 3.0)   # Swing: RR 1:3
+        target_3 = recommended_entry - (risk * config.ATR_TARGET_MULTIPLIER)  # Swing: RR 1:5
 
         stop_pct = (recommended_stop - recommended_entry) / recommended_entry * 100
         target_2_pct = (recommended_entry - target_2) / recommended_entry * 100
@@ -185,6 +226,7 @@ class EntryExitCalculator:
 
         return {
             'direction': 'SHORT',
+            'style': 'Swing',
             'current_price': round(current_price, 6),
             'entry_price': round(recommended_entry, 6),
             'entry_strategy': entry_strategy,
@@ -197,6 +239,8 @@ class EntryExitCalculator:
             'risk_reward': round(rr, 2),
             'atr_15m': round(atr_15m, 6),
             'atr_1h': round(atr_1h, 6),
+            'atr_4h': round(atr_4h, 6),
+            'atr_1d': round(atr_1d, 6),
             'nearest_support': round(nearest_support, 6),
             'nearest_resistance': round(nearest_resistance, 6),
             'alt_entries': {
