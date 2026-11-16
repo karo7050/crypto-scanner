@@ -28,10 +28,34 @@ from bidi.algorithm import get_display
 import config
 
 # ============ ثبت فونت‌ها ============
-FONT_DIR = '/home/z/my-project/fonts'
-pdfmetrics.registerFont(TTFont('Vazir', os.path.join(FONT_DIR, 'Vazirmatn-Regular.ttf')))
-pdfmetrics.registerFont(TTFont('Vazir-Bold', os.path.join(FONT_DIR, 'Vazirmatn-Bold.ttf')))
-pdfmetrics.registerFont(TTFont('Vazir-Medium', os.path.join(FONT_DIR, 'Vazirmatn-Medium.ttf')))
+# مسیر فونت: از env یا مسیر پیش‌فرض
+FONT_DIR = os.environ.get('FONT_DIR', '/home/z/my-project/fonts')
+if not os.path.exists(FONT_DIR):
+    # مسیرهای جایگزین
+    for alt in [os.path.expanduser('~/fonts'), '/home/runner/fonts', '/usr/share/fonts']:
+        if os.path.exists(alt):
+            FONT_DIR = alt
+            break
+
+# ثبت فونت‌ها (با fallback)
+_font_regular = os.path.join(FONT_DIR, 'Vazirmatn-Regular.ttf')
+_font_bold = os.path.join(FONT_DIR, 'Vazirmatn-Bold.ttf')
+_font_medium = os.path.join(FONT_DIR, 'Vazirmatn-Medium.ttf')
+
+# اگر فونت Vazirmatn موجود نیست، از SimHei استفاده کن
+if not os.path.exists(_font_regular):
+    _font_regular = os.path.join(FONT_DIR, 'simhei.ttf')
+    _font_bold = _font_regular
+    _font_medium = _font_regular
+
+try:
+    pdfmetrics.registerFont(TTFont('Vazir', _font_regular))
+    pdfmetrics.registerFont(TTFont('Vazir-Bold', _font_bold if os.path.exists(_font_bold) else _font_regular))
+    pdfmetrics.registerFont(TTFont('Vazir-Medium', _font_medium if os.path.exists(_font_medium) else _font_regular))
+except Exception as e:
+    # fallback: استفاده از فونت پیش‌فرض ReportLab
+    import logging
+    logging.warning(f"ثبت فونت ناموفق: {e}. استفاده از فونت پیش‌فرض.")
 
 
 def fa(text) -> str:
