@@ -36,7 +36,9 @@ CANDLE_LIMITS = {
 
 # ============ صرافی ============
 # توجه: Binance این IP را مسدود کرده، از Bybit استفاده می‌کنیم
-EXCHANGE_ID = 'bybit'
+# در GitHub Actions (IP آمریکا)، Bybit ممکن است مسدود باشد
+# لیست صرافی‌های fallback به ترتیب اولویت
+EXCHANGE_PRIORITY = ['bybit', 'okx', 'gate', 'mexc', 'kucoin']
 EXCHANGE_API_KEY = os.environ.get('BYBIT_API_KEY', '')
 EXCHANGE_API_SECRET = os.environ.get('BYBIT_API_SECRET', '')
 
