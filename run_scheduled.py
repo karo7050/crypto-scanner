@@ -44,6 +44,7 @@ from events_calendar import EconomicEventsCalendar
 from oi_funding import OIFundingAnalyzer
 from news_analyzer import NewsAnalyzer
 from volume_flow import VolumeFlowAnalyzer
+from btc_benchmark import BTCBenchmarkAnalyzer
 import copy
 
 # تنظیم لاگینگ
@@ -133,13 +134,25 @@ def run_scan_and_send():
                 logger.debug(f"خطا در Volume Flow {base}: {e}")
                 flow_data = None
 
+            # تحلیل BTC pair (قدرت نسبت به بیت‌کوین)
+            try:
+                btc_pair_data = timeframes_data.get('_btc_pair')
+                if btc_pair_data:
+                    btc_data = BTCBenchmarkAnalyzer.analyze_btc_pair(btc_pair_data)
+                else:
+                    btc_data = {'available': False}
+            except Exception as e:
+                logger.debug(f"خطا در BTC pair {base}: {e}")
+                btc_data = {'available': False}
+
             # امتیازدهی با همه داده‌ها
-            score = SignalEngine.score_coin(coin, analysis, ob_analysis, oi_data, news_data, flow_data)
+            score = SignalEngine.score_coin(coin, analysis, ob_analysis, oi_data, news_data, flow_data, btc_data)
             score['_analysis'] = analysis
             score['_ob_analysis'] = ob_analysis
             score['_oi_data'] = oi_data
             score['_news_data'] = news_data
             score['_flow_data'] = flow_data
+            score['_btc_data'] = btc_data
 
             if score['long_score'] >= score['short_score']:
                 score['setup'] = EntryExitCalculator.calculate_long_setup(analysis, ob_analysis)
