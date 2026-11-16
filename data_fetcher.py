@@ -269,10 +269,11 @@ class DataFetcher:
             logger.debug(f"خطا در دریافت تکرر {symbol}: {e}")
             return None
 
-    # ----------------- دریافت همه تایم فریم‌ها -----------------
+    # ----------------- دریافت همه تایم فریم‌ها + BTC pair -----------------
     def fetch_all_timeframes(self, symbol: str) -> Dict[str, pd.DataFrame]:
         """
         دریافت OHLCV برای همه تایم فریم‌های تعریف شده
+        + دریافت BTC pair برای مقایسه نسبت به بیت‌کوین
         """
         result = {}
         for tf in config.TIMEFRAMES:
@@ -281,4 +282,22 @@ class DataFetcher:
             if df is not None and len(df) >= 50:
                 result[tf] = df
             time.sleep(0.15)  # احترام به Rate Limit
+
+        # دریافت BTC pair برای مقایسه (مثلا ETH/BTC)
+        if symbol != 'BTC/USDT':
+            base = symbol.replace('/USDT', '')
+            btc_symbol = f"{base}/BTC"
+            btc_pair_data = {}
+            for tf in config.TIMEFRAMES:
+                try:
+                    df_btc = self.fetch_ohlcv(btc_symbol, tf, limit=100)
+                    if df_btc is not None and len(df_btc) >= 50:
+                        btc_pair_data[tf] = df_btc
+                    time.sleep(0.1)
+                except Exception:
+                    continue
+            if btc_pair_data:
+                result['_btc_pair'] = btc_pair_data
+                logger.debug(f"BTC pair برای {base} دریافت شد")
+
         return result
