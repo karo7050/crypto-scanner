@@ -100,7 +100,10 @@ TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')  # chat_id یا channel username
 
 # ============ مسیر خروجی ============
-OUTPUT_DIR = '/home/z/my-project/download/crypto_scanner/output'
+# مسیر خروجی: محلی یا GitHub Actions
+# در GitHub Actions از مسیر relative استفاده می‌شود
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'output')
 OUTPUT_FILE = 'crypto_signals_{timestamp}.xlsx'
 
 # ایجاد پوشه خروجی
