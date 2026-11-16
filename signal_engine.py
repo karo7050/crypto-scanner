@@ -18,10 +18,11 @@ class SignalEngine:
 
     @staticmethod
     def score_coin(coin_info: Dict, analysis: Dict, order_book_analysis: Dict,
-                   oi_data: Dict = None, news_data: Dict = None, flow_data: Dict = None) -> Dict:
+                   oi_data: Dict = None, news_data: Dict = None, flow_data: Dict = None,
+                   btc_data: Dict = None) -> Dict:
         """
         امتیازدهی جامع به یک کوین برای لانگ و شورت
-        شامل: روند، مومنتوم، نقدینگی، حجم، ساختار، OI/Funding، اخبار، Volume Flow
+        شامل: روند، مومنتوم، نقدینگی، حجم، ساختار، OI/Funding، اخبار، Volume Flow، BTC pair
         """
         weights = config.SCORE_WEIGHTS
 
@@ -172,6 +173,30 @@ class SignalEngine:
             elif flow_score < 0:
                 flow_short_bonus = abs(flow_score) * 8  # خروج پول → شورت
 
+        # ---------- امتیاز BTC pair (قدرت نسبت به بیت‌کوین) ----------
+        btc_long_bonus = 0
+        btc_short_bonus = 0
+        btc_confirmation_long = ''
+        btc_confirmation_short = ''
+        if btc_data and btc_data.get('available'):
+            btc_score = btc_data.get('btc_score', 0)
+            btc_strength = btc_data.get('btc_strength', 'unknown')
+            
+            # تأیید لانگ: ارز قوی‌تر از BTC
+            if btc_score > 0:
+                btc_long_bonus = btc_score * 10
+                btc_confirmation_long = f'✅ {btc_strength}'
+            # تأیید شورت: ارز ضعیف‌تر از BTC
+            elif btc_score < 0:
+                btc_short_bonus = abs(btc_score) * 10
+                btc_confirmation_short = f'✅ {btc_strength}'
+            
+            # هشدارهای مخالف
+            if btc_score < 0:
+                btc_confirmation_long = f'⚠ {btc_strength} - لانگ خطرناک'
+            elif btc_score > 0:
+                btc_confirmation_short = f'⚠ {btc_strength} - شورت خطرناک'
+
         # ---------- امتیاز نهایی ----------
         long_score = (
             trend_long_score * weights['trend_alignment'] / 100 +
@@ -179,7 +204,7 @@ class SignalEngine:
             liquidity_long * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
             ob_score_long * weights['structure'] / 100 +
-            oi_long_bonus + news_long_bonus + flow_long_bonus
+            oi_long_bonus + news_long_bonus + flow_long_bonus + btc_long_bonus
         )
         short_score = (
             trend_short_score * weights['trend_alignment'] / 100 +
@@ -187,15 +212,15 @@ class SignalEngine:
             liquidity_short * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
             ob_score_short * weights['structure'] / 100 +
-            oi_short_bonus + news_short_bonus + flow_short_bonus
+            oi_short_bonus + news_short_bonus + flow_short_bonus + btc_short_bonus
         )
 
         # ---------- تولید دلایل ----------
         long_reasons = SignalEngine._generate_long_reasons(
-            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data, flow_data
+            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data, flow_data, btc_data
         )
         short_reasons = SignalEngine._generate_short_reasons(
-            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data, flow_data
+            trend, structure, state_1h, state_15m, order_book_analysis, oi_data, news_data, flow_data, btc_data
         )
 
         return {
@@ -224,7 +249,7 @@ class SignalEngine:
 
     # ----------------- تولید دلایل لانگ -----------------
     @staticmethod
-    def _generate_long_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None, flow_data=None) -> List[str]:
+    def _generate_long_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None, flow_data=None, btc_data=None) -> List[str]:
         reasons = []
         if trend['alignment_pct'] > 40:
             reasons.append(f"هماهنگی روند صعودی قوی در چند تایم فریم ({trend['alignment_pct']:.0f}%)")
@@ -263,11 +288,19 @@ class SignalEngine:
                 else:
                     net_str = f"${net/1e3:.0f}K"
                 reasons.append(f"ورود پول خالص 24h: {net_str} ({flow_data.get('flow_signal', '')})")
+        # دلایل BTC pair
+        if btc_data and btc_data.get('available'):
+            btc_score = btc_data.get('btc_score', 0)
+            if btc_score > 0:
+                change_4h = btc_data.get('4h', {}).get('change_24h_vs_btc_pct', 0)
+                reasons.append(f"قوی‌تر از BTC (24h: {change_4h:+.1f}% نسبت به BTC)")
+            elif btc_score < 0:
+                reasons.append(f"⚠ ضعیف‌تر از BTC - لانگ با احتیاط")
         return reasons
 
     # ----------------- تولید دلایل شورت -----------------
     @staticmethod
-    def _generate_short_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None, flow_data=None) -> List[str]:
+    def _generate_short_reasons(trend, structure, state_1h, state_15m, ob, oi_data=None, news_data=None, flow_data=None, btc_data=None) -> List[str]:
         reasons = []
         if trend['alignment_pct'] < -40:
             reasons.append(f"هماهنگی روند نزولی قوی در چند تایم فریم ({abs(trend['alignment_pct']):.0f}%)")
@@ -306,6 +339,14 @@ class SignalEngine:
                 else:
                     net_str = f"${abs(net)/1e3:.0f}K"
                 reasons.append(f"خروج پول خالص 24h: {net_str} ({flow_data.get('flow_signal', '')})")
+        # دلایل BTC pair
+        if btc_data and btc_data.get('available'):
+            btc_score = btc_data.get('btc_score', 0)
+            if btc_score < 0:
+                change_4h = btc_data.get('4h', {}).get('change_24h_vs_btc_pct', 0)
+                reasons.append(f"ضعیف‌تر از BTC (24h: {change_4h:+.1f}% نسبت به BTC)")
+            elif btc_score > 0:
+                reasons.append(f"⚠ قوی‌تر از BTC - شورت با احتیاط")
         return reasons
 
     # ----------------- انتخاب نهایی -----------------
