@@ -247,10 +247,24 @@ class TelegramSender:
                     funding_emoji = '🔴' if funding_rate > 0.0003 else '🟢' if funding_rate < -0.0001 else '⚪'
                     oi_info = f"\n   {funding_emoji} OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%"
 
+                # Volume Flow (ورود/خروج پول)
+                flow_info = ''
+                flow_data = s.get('_flow_data')
+                if flow_data:
+                    net = flow_data.get('net_flow_24h_usd', 0)
+                    if abs(net) >= 1e6:
+                        net_str = f"${net/1e6:.1f}M"
+                    elif abs(net) >= 1e3:
+                        net_str = f"${net/1e3:.0f}K"
+                    else:
+                        net_str = f"${net:.0f}"
+                    flow_emoji = '🟢' if net > 0 else '🔴' if net < 0 else '⚪'
+                    flow_info = f"\n   {flow_emoji} Flow 24h: {net_str} ({flow_data.get('direction_en', '')})"
+
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
                     f"   ورود: {entry} | استاپ: {stop} ({stop_pct}%)\n"
-                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}"
+                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}{flow_info}"
                 )
             msg.append("")
 
@@ -294,20 +308,34 @@ class TelegramSender:
                     funding_emoji = '🔴' if funding_rate > 0.0003 else '🟢' if funding_rate < -0.0001 else '⚪'
                     oi_info = f"\n   {funding_emoji} OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%"
 
+                # Volume Flow (ورود/خروج پول)
+                flow_info = ''
+                flow_data = s.get('_flow_data')
+                if flow_data:
+                    net = flow_data.get('net_flow_24h_usd', 0)
+                    if abs(net) >= 1e6:
+                        net_str = f"${net/1e6:.1f}M"
+                    elif abs(net) >= 1e3:
+                        net_str = f"${net/1e3:.0f}K"
+                    else:
+                        net_str = f"${net:.0f}"
+                    flow_emoji = '🟢' if net > 0 else '🔴' if net < 0 else '⚪'
+                    flow_info = f"\n   {flow_emoji} Flow 24h: {net_str} ({flow_data.get('direction_en', '')})"
+
                 msg.append(
                     f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
                     f"   ورود: {entry} | استاپ: {stop} ({stop_pct}%)\n"
-                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}"
+                    f"   هدف: {target} | RR: 1:2{vol_info}{oi_info}{flow_info}"
                 )
             msg.append("")
 
-        # راهنمای حجم و OI
+        # راهنمای تحلیل
         msg.append("━━━━━━━━━━━━━━━━━━━━")
         msg.append("📊 <b>راهنمای تحلیل:</b>")
-        msg.append("  🟢 حجم بالا / Funding منفی = تایید ورود")
+        msg.append("  🟢 حجم بالا / Funding منفی / Flow مثبت = تایید ورود")
         msg.append("  🟡 حجم متوسط = احتیاط")
-        msg.append("  🔴 حجم کم / Funding مثبت = هشدار")
-        msg.append("  ⚪ حجم نرمال / Funding متعادل = خنثی")
+        msg.append("  🔴 حجم کم / Funding مثبت / Flow منفی = هشدار")
+        msg.append("  ⚪ خنثی")
 
         # رویداد اقتصادی
         if event_guidance and event_guidance.get('has_events'):
