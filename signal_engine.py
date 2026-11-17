@@ -19,10 +19,10 @@ class SignalEngine:
     @staticmethod
     def score_coin(coin_info: Dict, analysis: Dict, order_book_analysis: Dict,
                    oi_data: Dict = None, news_data: Dict = None, flow_data: Dict = None,
-                   btc_data: Dict = None) -> Dict:
+                   btc_data: Dict = None, smc_data: Dict = None) -> Dict:
         """
-        امتیازدهی جامع به یک کوین برای لانگ و شورت
-        شامل: روند، مومنتوم، نقدینگی، حجم، ساختار، OI/Funding، اخبار، Volume Flow، BTC pair
+        امتیازدهی جامع با SMC (Smart Money Concepts)
+        اولویت: SMC > Trend > Volume > Liquidity
         """
         weights = config.SCORE_WEIGHTS
 
@@ -197,6 +197,74 @@ class SignalEngine:
             elif btc_score > 0:
                 btc_confirmation_short = f'⚠ {btc_strength} - شورت خطرناک'
 
+        # ---------- امتیاز SMC (Smart Money Concepts) - بالاترین اولویت ----------
+        smc_long_bonus = 0
+        smc_short_bonus = 0
+        smc_reasons_long = []
+        smc_reasons_short = []
+        smc_quality = 0
+
+        if smc_data and smc_data.get('available'):
+            # تحلیل 4h
+            smc_4h = smc_data.get('4h', {})
+            smc_1h = smc_data.get('1h', {})
+            smc_15m = smc_data.get('15m', {})
+
+            # امتیاز ساختار (BOS/CHoCH)
+            score_4h = smc_4h.get('structure_score', 0) if smc_4h.get('available') else 0
+            score_1h = smc_1h.get('structure_score', 0) if smc_1h.get('available') else 0
+            score_15m = smc_15m.get('structure_score', 0) if smc_15m.get('available') else 0
+
+            # وزن: 4h (3x), 1h (2x), 15m (1x)
+            smc_combined = (score_4h * 3 + score_1h * 2 + score_15m * 1) / 6
+
+            if smc_combined > 0:
+                smc_long_bonus = smc_combined * 15  # SMC بالاترین وزن
+            elif smc_combined < 0:
+                smc_short_bonus = abs(smc_combined) * 15
+
+            # تأیید Order Block
+            if smc_1h.get('in_bull_ob') or smc_1h.get('near_bull_ob'):
+                smc_long_bonus += 10
+                smc_reasons_long.append("✅ قیمت در/نزدیک Order Block صعودی")
+            if smc_1h.get('in_bear_ob') or smc_1h.get('near_bear_ob'):
+                smc_short_bonus += 10
+                smc_reasons_short.append("✅ قیمت در/نزدیک Order Block نزولی")
+
+            # تأیید FVG
+            if smc_1h.get('last_fvg'):
+                fvg = smc_1h.get('last_fvg', '')
+                if 'BULLISH FVG' in fvg:
+                    smc_long_bonus += 8
+                    smc_reasons_long.append("✅ Fair Value Gap صعودی (حمایت)")
+                elif 'BEARISH FVG' in fvg:
+                    smc_short_bonus += 8
+                    smc_reasons_short.append("✅ Fair Value Gap نزولی (مقاومت)")
+
+            # کیفیت setup
+            smc_quality = smc_data.get('setup_quality', 0)
+
+            # در صورت تناقض SMC، امتیاز منفی
+            if score_4h > 0 and score_1h < 0:
+                smc_long_bonus *= 0.5  # کاهش امتیاز به دلیل conflict
+                smc_reasons_long.append("⚠ تناقض 4H صعودی و 1H نزولی")
+            if score_4h < 0 and score_1h > 0:
+                smc_short_bonus *= 0.5
+                smc_reasons_short.append("⚠ تناقض 4H نزولی و 1H صعودی")
+
+        # ---------- فیلتر جهت SMC ----------
+        # اگر SMC جهت مشخص دارد، فقط آن جهت سیگنال بده
+        smc_direction = 'neutral'
+        if smc_data and smc_data.get('available'):
+            smc_direction = smc_data.get('combined_direction', 'neutral')
+
+        # اگر SMC صعودی است → شورت را کاهش بده
+        if smc_direction == 'bullish':
+            smc_short_bonus *= 0.3
+        # اگر SMC نزولی است → لانگ را کاهش بده
+        elif smc_direction == 'bearish':
+            smc_long_bonus *= 0.3
+
         # ---------- امتیاز نهایی ----------
         long_score = (
             trend_long_score * weights['trend_alignment'] / 100 +
@@ -204,7 +272,7 @@ class SignalEngine:
             liquidity_long * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
             ob_score_long * weights['structure'] / 100 +
-            oi_long_bonus + news_long_bonus + flow_long_bonus + btc_long_bonus
+            oi_long_bonus + news_long_bonus + flow_long_bonus + btc_long_bonus + smc_long_bonus
         )
         short_score = (
             trend_short_score * weights['trend_alignment'] / 100 +
@@ -212,7 +280,7 @@ class SignalEngine:
             liquidity_short * weights['liquidity'] / 100 +
             volume_score * weights['volume'] / 100 +
             ob_score_short * weights['structure'] / 100 +
-            oi_short_bonus + news_short_bonus + flow_short_bonus + btc_short_bonus
+            oi_short_bonus + news_short_bonus + flow_short_bonus + btc_short_bonus + smc_short_bonus
         )
 
         # ---------- تولید دلایل ----------
