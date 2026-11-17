@@ -45,6 +45,7 @@ from oi_funding import OIFundingAnalyzer
 from news_analyzer import NewsAnalyzer
 from volume_flow import VolumeFlowAnalyzer
 from btc_benchmark import BTCBenchmarkAnalyzer
+from smc_analyzer import SMCAnalyzer
 import copy
 
 # تنظیم لاگینگ
@@ -145,14 +146,22 @@ def run_scan_and_send():
                 logger.debug(f"خطا در BTC pair {base}: {e}")
                 btc_data = {'available': False}
 
-            # امتیازدهی با همه داده‌ها
-            score = SignalEngine.score_coin(coin, analysis, ob_analysis, oi_data, news_data, flow_data, btc_data)
+            # تحلیل SMC (Smart Money Concepts)
+            try:
+                smc_data = SMCAnalyzer.analyze_multi_tf(timeframes_data)
+            except Exception as e:
+                logger.debug(f"خطا در SMC {base}: {e}")
+                smc_data = {'available': False}
+
+            # امتیازدهی با همه داده‌ها + SMC
+            score = SignalEngine.score_coin(coin, analysis, ob_analysis, oi_data, news_data, flow_data, btc_data, smc_data)
             score['_analysis'] = analysis
             score['_ob_analysis'] = ob_analysis
             score['_oi_data'] = oi_data
             score['_news_data'] = news_data
             score['_flow_data'] = flow_data
             score['_btc_data'] = btc_data
+            score['_smc_data'] = smc_data
 
             if score['long_score'] >= score['short_score']:
                 score['setup'] = EntryExitCalculator.calculate_long_setup(analysis, ob_analysis)
