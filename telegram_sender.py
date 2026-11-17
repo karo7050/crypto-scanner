@@ -210,45 +210,94 @@ class TelegramSender:
         # برترین لانگ‌ها
         long_signals = signals.get('long', [])
         if long_signals:
-            msg.append("🟢 <b>برترین سیگنال‌های لانگ</b>")
+            msg.append("🟢 <b>سیگنال‌های لانگ (LONG)</b>")
             msg.append("━━━━━━━━━━━━━━━━━━━━")
-            for i, s in enumerate(long_signals[:5], 1):
+            for i, s in enumerate(long_signals[:3], 1):
                 coin = s.get('coin', {})
                 setup = s.get('setup', {})
                 score = s.get('long_score', 0)
                 vol_entry = s.get('volume_entry', {})
+                smc_data = s.get('_smc_data', {})
                 entry = TelegramSender._fmt_price(setup.get('entry_price', 0))
                 stop = TelegramSender._fmt_price(setup.get('stop_loss', 0))
-                target = TelegramSender._fmt_price(setup.get('target_2', 0))
+                target1 = TelegramSender._fmt_price(setup.get('target_1', 0))
+                target2 = TelegramSender._fmt_price(setup.get('target_2', 0))
+                target3 = TelegramSender._fmt_price(setup.get('target_3', 0))
                 stop_pct = setup.get('stop_pct', 0)
+                rr = setup.get('risk_reward', 0)
 
-                # تحلیل حجم و OI/Funding
-                vol_emoji = ''
-                vol_info = ''
+                msg.append(f"\n<b>{i}. {coin.get('base', '')} | امتیاز: {score:.1f}</b>")
+                msg.append(f"💰 قیمت فعلی: {TelegramSender._fmt_price(setup.get('current_price', 0))}")
+
+                # SMC تحلیل ساختار
+                if smc_data and smc_data.get('available'):
+                    smc_4h = smc_data.get('4h', {})
+                    smc_1h = smc_data.get('1h', {})
+                    smc_15m = smc_data.get('15m', {})
+                    combined_dir = smc_data.get('combined_direction', 'neutral')
+                    quality = smc_data.get('setup_quality', 0)
+
+                    dir_emoji = '🟢' if combined_dir == 'bullish' else '🔴' if combined_dir == 'bearish' else '⚪'
+                    msg.append(f"{dir_emoji} <b>ساختار بازار (SMC):</b>")
+
+                    if smc_4h.get('available'):
+                        msg.append(f"  • 4H: {smc_4h.get('structure', 'نامشخص')}")
+                    if smc_1h.get('available'):
+                        msg.append(f"  • 1H: {smc_1h.get('structure', 'نامشخص')}")
+                    if smc_15m.get('available'):
+                        msg.append(f"  • 15M: {smc_15m.get('structure', 'نامشخص')}")
+
+                    # Order Block
+                    if smc_1h.get('in_bull_ob'):
+                        msg.append(f"  📦 قیمت در Order Block صعودی: {smc_1h.get('bull_ob_bottom', 0):.6f} - {smc_1h.get('bull_ob_top', 0):.6f}")
+                    elif smc_1h.get('near_bull_ob'):
+                        msg.append(f"  📦 نزدیک Order Block صعودی")
+
+                    # FVG
+                    if smc_1h.get('last_fvg') and 'BULLISH' in smc_1h.get('last_fvg', ''):
+                        msg.append(f"  📊 Fair Value Gap صعودی: {smc_1h.get('fvg_bottom', 0):.6f} - {smc_1h.get('fvg_top', 0):.6f}")
+
+                    msg.append(f"  ✅ تعداد تأییدها: {quality}/5")
+
+                # نقاط ورود و خروج
+                msg.append(f"\n📍 <b>نقطه ورود:</b> {entry}")
+                msg.append(f"   استراتژی: {setup.get('entry_strategy', '')}")
+                if setup.get('entry_reasons'):
+                    for reason in setup.get('entry_reasons', [])[:2]:
+                        msg.append(f"   • {reason}")
+
+                msg.append(f"\n🔴 <b>استاپ لاس:</b> {stop} ({stop_pct}%)")
+                msg.append(f"   دلیل: {setup.get('stop_reason', '')}")
+
+                msg.append(f"\n🎯 <b>اهداف سود:</b>")
+                msg.append(f"   TP1: {target1} (RR 1:2) - {setup.get('target_1_reason', '')}")
+                msg.append(f"   TP2: {target2} (RR 1:3) - {setup.get('target_2_reason', '')}")
+                msg.append(f"   TP3: {target3} (RR 1:5) - {setup.get('target_3_reason', '')}")
+
+                # شرط ورود و تایم فریم
+                msg.append(f"\n⏰ <b>تایم فریم ورود:</b> 15 دقیقه")
+                msg.append(f"📋 <b>شرط ورود:</b>")
+                wall_check = setup.get('wall_check', {})
+                if wall_check and wall_check.get('near_wall'):
+                    msg.append(f"   ⚠ نزدیک دیوار فروش - صبر کن تا شکست معتبر")
+                    msg.append(f"   → ورود بعد از کندل بسته 15m بالای {wall_check.get('wall_price', 0):.6f}")
+                else:
+                    msg.append(f"   → صبر کن تا قیمت به {entry} برسد")
+                    msg.append(f"   → تأیید با کندل بسته 15m")
+                msg.append(f"   → حجم باید بالای میانگین باشد")
+
+                # داده‌های بازار
+                info_parts = []
                 if vol_entry:
-                    entry_signal = vol_entry.get('entry_signal', '')
                     h1_vol = vol_entry.get('1h', {}).get('vol_ratio', 1)
                     m15_vol = vol_entry.get('15m', {}).get('vol_ratio', 1)
-                    if 'ورود قوی' in entry_signal:
-                        vol_emoji = '🟢'
-                    elif 'هشدار' in entry_signal:
-                        vol_emoji = '🔴'
-                    elif 'احتیاط' in entry_signal:
-                        vol_emoji = '🟡'
-                    else:
-                        vol_emoji = '⚪'
-                    vol_info = f"\n   {vol_emoji} حجم 1h: {h1_vol}x | 15m: {m15_vol}x"
+                    info_parts.append(f"حجم 1h: {h1_vol}x | 15m: {m15_vol}x")
 
-                # OI و Funding
-                oi_info = ''
                 oi_data = s.get('_oi_data')
                 if oi_data and oi_data.get('oi_usd'):
                     funding_rate = oi_data.get('funding_rate', 0)
-                    funding_emoji = '🔴' if funding_rate > 0.0003 else '🟢' if funding_rate < -0.0001 else '⚪'
-                    oi_info = f"\n   {funding_emoji} OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%"
+                    info_parts.append(f"OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%")
 
-                # Volume Flow (ورود/خروج پول)
-                flow_info = ''
                 flow_data = s.get('_flow_data')
                 if flow_data:
                     net = flow_data.get('net_flow_24h_usd', 0)
@@ -258,72 +307,113 @@ class TelegramSender:
                         net_str = f"${net/1e3:.0f}K"
                     else:
                         net_str = f"${net:.0f}"
-                    flow_emoji = '🟢' if net > 0 else '🔴' if net < 0 else '⚪'
-                    flow_info = f"\n   {flow_emoji} Flow 24h: {net_str} ({flow_data.get('direction_en', '')})"
+                    info_parts.append(f"Flow: {net_str} ({flow_data.get('direction_en', '')})")
 
-                # BTC pair (قدرت نسبت به بیت‌کوین)
-                btc_info = ''
                 btc_data = s.get('_btc_data')
                 if btc_data and btc_data.get('available'):
                     btc_score = btc_data.get('btc_score', 0)
                     change_4h = btc_data.get('4h', {}).get('change_24h_vs_btc_pct', 0)
                     if btc_score > 0:
-                        btc_emoji = '💪'  # قوی‌تر از BTC
-                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (قوی‌تر)"
+                        info_parts.append(f"vs BTC: {change_4h:+.1f}% (قوی‌تر)")
                     elif btc_score < 0:
-                        btc_emoji = '📉'  # ضعیف‌تر از BTC
-                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (ضعیف‌تر)"
+                        info_parts.append(f"vs BTC: {change_4h:+.1f}% (ضعیف‌تر)")
 
-                msg.append(
-                    f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
-                    f"   📍 ورود: {entry} ({setup.get('entry_strategy', '')[:40]})\n"
-                    f"   🔴 استاپ: {stop} ({stop_pct}%) - {setup.get('stop_reason', '')[:50]}\n"
-                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}{btc_info}"
-                )
-            msg.append("")
+                if info_parts:
+                    msg.append(f"\n📊 <b>داده‌های بازار:</b>")
+                    for part in info_parts:
+                        msg.append(f"   • {part}")
 
         # برترین شورت‌ها
         short_signals = signals.get('short', [])
         if short_signals:
-            msg.append("🔴 <b>برترین سیگنال‌های شورت</b>")
+            msg.append("\n\n🔴 <b>سیگنال‌های شورت (SHORT)</b>")
             msg.append("━━━━━━━━━━━━━━━━━━━━")
-            for i, s in enumerate(short_signals[:5], 1):
+            for i, s in enumerate(short_signals[:3], 1):
                 coin = s.get('coin', {})
                 setup = s.get('setup', {})
                 score = s.get('short_score', 0)
                 vol_entry = s.get('volume_entry', {})
+                smc_data = s.get('_smc_data', {})
                 entry = TelegramSender._fmt_price(setup.get('entry_price', 0))
                 stop = TelegramSender._fmt_price(setup.get('stop_loss', 0))
-                target = TelegramSender._fmt_price(setup.get('target_2', 0))
+                target1 = TelegramSender._fmt_price(setup.get('target_1', 0))
+                target2 = TelegramSender._fmt_price(setup.get('target_2', 0))
+                target3 = TelegramSender._fmt_price(setup.get('target_3', 0))
                 stop_pct = setup.get('stop_pct', 0)
+                rr = setup.get('risk_reward', 0)
 
-                # تحلیل حجم و OI/Funding
-                vol_emoji = ''
-                vol_info = ''
+                msg.append(f"\n<b>{i}. {coin.get('base', '')} | امتیاز: {score:.1f}</b>")
+                msg.append(f"💰 قیمت فعلی: {TelegramSender._fmt_price(setup.get('current_price', 0))}")
+
+                # SMC تحلیل ساختار
+                if smc_data and smc_data.get('available'):
+                    smc_4h = smc_data.get('4h', {})
+                    smc_1h = smc_data.get('1h', {})
+                    smc_15m = smc_data.get('15m', {})
+                    combined_dir = smc_data.get('combined_direction', 'neutral')
+                    quality = smc_data.get('setup_quality', 0)
+
+                    dir_emoji = '🟢' if combined_dir == 'bullish' else '🔴' if combined_dir == 'bearish' else '⚪'
+                    msg.append(f"{dir_emoji} <b>ساختار بازار (SMC):</b>")
+
+                    if smc_4h.get('available'):
+                        msg.append(f"  • 4H: {smc_4h.get('structure', 'نامشخص')}")
+                    if smc_1h.get('available'):
+                        msg.append(f"  • 1H: {smc_1h.get('structure', 'نامشخص')}")
+                    if smc_15m.get('available'):
+                        msg.append(f"  • 15M: {smc_15m.get('structure', 'نامشخص')}")
+
+                    # Order Block
+                    if smc_1h.get('in_bear_ob'):
+                        msg.append(f"  📦 قیمت در Order Block نزولی: {smc_1h.get('bear_ob_bottom', 0):.6f} - {smc_1h.get('bear_ob_top', 0):.6f}")
+                    elif smc_1h.get('near_bear_ob'):
+                        msg.append(f"  📦 نزدیک Order Block نزولی")
+
+                    # FVG
+                    if smc_1h.get('last_fvg') and 'BEARISH' in smc_1h.get('last_fvg', ''):
+                        msg.append(f"  📊 Fair Value Gap نزولی: {smc_1h.get('fvg_bottom', 0):.6f} - {smc_1h.get('fvg_top', 0):.6f}")
+
+                    msg.append(f"  ✅ تعداد تأییدها: {quality}/5")
+
+                # نقاط ورود و خروج
+                msg.append(f"\n📍 <b>نقطه ورود:</b> {entry}")
+                msg.append(f"   استراتژی: {setup.get('entry_strategy', '')}")
+                if setup.get('entry_reasons'):
+                    for reason in setup.get('entry_reasons', [])[:2]:
+                        msg.append(f"   • {reason}")
+
+                msg.append(f"\n🔴 <b>استاپ لاس:</b> {stop} ({stop_pct}%)")
+                msg.append(f"   دلیل: {setup.get('stop_reason', '')}")
+
+                msg.append(f"\n🎯 <b>اهداف سود:</b>")
+                msg.append(f"   TP1: {target1} (RR 1:2) - {setup.get('target_1_reason', '')}")
+                msg.append(f"   TP2: {target2} (RR 1:3) - {setup.get('target_2_reason', '')}")
+                msg.append(f"   TP3: {target3} (RR 1:5) - {setup.get('target_3_reason', '')}")
+
+                # شرط ورود و تایم فریم
+                msg.append(f"\n⏰ <b>تایم فریم ورود:</b> 15 دقیقه")
+                msg.append(f"📋 <b>شرط ورود:</b>")
+                wall_check = setup.get('wall_check', {})
+                if wall_check and wall_check.get('near_wall'):
+                    msg.append(f"   ⚠ نزدیک دیوار خرید - صبر کن تا شکست معتبر")
+                    msg.append(f"   → ورود بعد از کندل بسته 15m زیر {wall_check.get('wall_price', 0):.6f}")
+                else:
+                    msg.append(f"   → صبر کن تا قیمت به {entry} برسد")
+                    msg.append(f"   → تأیید با کندل بسته 15m")
+                msg.append(f"   → حجم باید بالای میانگین باشد")
+
+                # داده‌های بازار
+                info_parts = []
                 if vol_entry:
-                    entry_signal = vol_entry.get('entry_signal', '')
                     h1_vol = vol_entry.get('1h', {}).get('vol_ratio', 1)
                     m15_vol = vol_entry.get('15m', {}).get('vol_ratio', 1)
-                    if 'ورود قوی' in entry_signal:
-                        vol_emoji = '🟢'
-                    elif 'هشدار' in entry_signal:
-                        vol_emoji = '🔴'
-                    elif 'احتیاط' in entry_signal:
-                        vol_emoji = '🟡'
-                    else:
-                        vol_emoji = '⚪'
-                    vol_info = f"\n   {vol_emoji} حجم 1h: {h1_vol}x | 15m: {m15_vol}x"
+                    info_parts.append(f"حجم 1h: {h1_vol}x | 15m: {m15_vol}x")
 
-                # OI و Funding
-                oi_info = ''
                 oi_data = s.get('_oi_data')
                 if oi_data and oi_data.get('oi_usd'):
                     funding_rate = oi_data.get('funding_rate', 0)
-                    funding_emoji = '🔴' if funding_rate > 0.0003 else '🟢' if funding_rate < -0.0001 else '⚪'
-                    oi_info = f"\n   {funding_emoji} OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%"
+                    info_parts.append(f"OI: ${oi_data['oi_usd']/1e6:.0f}M | Funding: {funding_rate*100:.4f}%")
 
-                # Volume Flow
-                flow_info = ''
                 flow_data = s.get('_flow_data')
                 if flow_data:
                     net = flow_data.get('net_flow_24h_usd', 0)
@@ -333,29 +423,21 @@ class TelegramSender:
                         net_str = f"${net/1e3:.0f}K"
                     else:
                         net_str = f"${net:.0f}"
-                    flow_emoji = '🟢' if net > 0 else '🔴' if net < 0 else '⚪'
-                    flow_info = f"\n   {flow_emoji} Flow 24h: {net_str} ({flow_data.get('direction_en', '')})"
+                    info_parts.append(f"Flow: {net_str} ({flow_data.get('direction_en', '')})")
 
-                # BTC pair
-                btc_info = ''
                 btc_data = s.get('_btc_data')
                 if btc_data and btc_data.get('available'):
                     btc_score = btc_data.get('btc_score', 0)
                     change_4h = btc_data.get('4h', {}).get('change_24h_vs_btc_pct', 0)
                     if btc_score > 0:
-                        btc_emoji = '💪'
-                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (قوی‌تر)"
+                        info_parts.append(f"vs BTC: {change_4h:+.1f}% (قوی‌تر)")
                     elif btc_score < 0:
-                        btc_emoji = '📉'
-                        btc_info = f"\n   {btc_emoji} vs BTC: {change_4h:+.1f}% (ضعیف‌تر)"
+                        info_parts.append(f"vs BTC: {change_4h:+.1f}% (ضعیف‌تر)")
 
-                msg.append(
-                    f"{i}. {vol_emoji} <b>{coin.get('base', '')}</b> | امتیاز: {score:.1f}\n"
-                    f"   📍 ورود: {entry} ({setup.get('entry_strategy', '')[:40]})\n"
-                    f"   🔴 استاپ: {stop} ({stop_pct}%) - {setup.get('stop_reason', '')[:50]}\n"
-                    f"   🎯 هدف: {target} (RR 1:3) - {setup.get('target_2_reason', '')[:50]}{vol_info}{oi_info}{flow_info}{btc_info}"
-                )
-            msg.append("")
+                if info_parts:
+                    msg.append(f"\n📊 <b>داده‌های بازار:</b>")
+                    for part in info_parts:
+                        msg.append(f"   • {part}")
 
         # راهنمای تحلیل
         msg.append("━━━━━━━━━━━━━━━━━━━━")
