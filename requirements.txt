@@ -24,3 +24,6 @@ requests>=2.31.0
 
 # زمان‌بند (برای اجرای محلی)
 schedule>=1.2.0
+
+# Smart Money Concepts
+smartmoneyconcepts>=0.0.27
