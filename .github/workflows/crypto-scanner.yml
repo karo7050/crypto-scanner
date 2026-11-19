@@ -45,7 +45,7 @@ jobs:
 
       - name: Run crypto scanner
         run: |
-          python3 run_scheduled.py
+           python3 run_multi_agent.py
 
       - name: Upload reports as artifacts
         if: always()
