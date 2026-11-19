@@ -26,6 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 from data_fetcher import DataFetcher
 from core.decision_engine import DecisionPipeline
+from core.watchlist_manager import WatchlistManager
+from core.data_models import Decision
 from telegram_sender import TelegramSender
 from events_calendar import EconomicEventsCalendar
 
@@ -92,8 +94,22 @@ def run_multi_agent_scan():
             logger.info("✓ گزارش Multi-Agent به تلگرام ارسال شد")
         else:
             logger.error("✗ ارسال ناموفق")
-    else:
-        logger.warning("تلگرام پیکربندی نشده")
+
+    # ثبت فرصت‌های تأیید شده در watchlist
+    logger.info("گام 5: به‌روزرسانی watchlist...")
+    wl = WatchlistManager()
+    for d in decisions:
+        if d.decision in [Decision.LONG, Decision.SHORT] and d.entry_price > 0:
+            targets = [d.target_1, d.target_2, d.target_3]
+            wl.add_coin(
+                symbol=d.symbol,
+                direction=d.decision.value,
+                entry_price=d.entry_price,
+                stop_loss=d.stop_loss,
+                targets=targets,
+                signal_strength=d.signal_strength,
+            )
+    logger.info(f"Watchlist به‌روز شد: {len(wl.get_active_coins())} کوین فعال")
 
     logger.info(f"اتمام. مدت: {duration:.1f}s")
     return True
