@@ -102,6 +102,216 @@ class TelegramSender:
             logger.error(f"خطا در ارسال فایل: {e}")
             return False
 
+    # ----------------- ارسال گزارش Multi-Agent -----------------
+    def send_multi_agent_report(self, decisions: list, scan_summary: Dict, event_guidance: Dict = None) -> bool:
+        """ارسال گزارش سیستم چند‌ایجنت - هر ارز در پیام جداگانه"""
+        if not self.is_configured():
+            return False
+
+        success = True
+
+        # 1. هشدار رویداد
+        if event_guidance and event_guidance.get('has_events'):
+            event_msg = self._build_event_message(event_guidance)
+            if event_msg:
+                self.send_message(event_msg)
+
+        # 2. پیام خلاصه (کلی)
+        summary_msg = self._build_multi_agent_message(decisions, scan_summary, event_guidance)
+        if not self.send_message(summary_msg):
+            success = False
+
+        # 3. برای هر ارز، یک پیام جداگانه با جزئیات کامل
+        from core.data_models import Decision
+        longs = [d for d in decisions if d.decision == Decision.LONG]
+        shorts = [d for d in decisions if d.decision == Decision.SHORT]
+        waits = [d for d in decisions if d.decision == Decision.WAIT]
+
+        # لانگ‌ها
+        if longs:
+            self.send_message("🟢 <b>سیگنال‌های LONG</b>\n━━━━━━━━━━━━━━━━━━━━")
+            for i, d in enumerate(longs[:3], 1):
+                detail_lines = self._format_decision_full(d, i)
+                detail_msg = '\n'.join(detail_lines)
+                self.send_message(detail_msg)
+
+        # شورت‌ها
+        if shorts:
+            self.send_message("🔴 <b>سیگنال‌های SHORT</b>\n━━━━━━━━━━━━━━━━━━━━")
+            for i, d in enumerate(shorts[:3], 1):
+                detail_lines = self._format_decision_full(d, i)
+                detail_msg = '\n'.join(detail_lines)
+                self.send_message(detail_msg)
+
+        # WAIT‌ها با جزئیات
+        if waits:
+            self.send_message("🟡 <b>WAIT - فرصت‌های تحت نظر</b>\n━━━━━━━━━━━━━━━━━━━━")
+            for i, d in enumerate(waits[:3], 1):
+                detail_lines = self._format_decision_full(d, i)
+                detail_msg = '\n'.join(detail_lines)
+                self.send_message(detail_msg)
+
+        # 4. لیست ارزهای رد شده (خلاصه)
+        rejects = [d for d in decisions if d.decision == Decision.NO_TRADE]
+        if rejects:
+            reject_msg = ["⚪ <b>رد شده‌ها (NO_TRADE)</b>", "━━━━━━━━━━━━━━━━━━━━"]
+            for d in rejects[:5]:
+                reason = d.brain_reasoning[:80] if d.brain_reasoning else "ریسک بالا یا داده ضعیف"
+                reject_msg.append(f"  • {d.symbol}: {reason}")
+            if len(rejects) > 5:
+                reject_msg.append(f"  ... و {len(rejects)-5} مورد دیگر")
+            self.send_message('\n'.join(reject_msg))
+
+        return success
+
+    # ----------------- ساخت پیام Multi-Agent -----------------
+    @staticmethod
+    def _build_multi_agent_message(decisions: list, scan_summary: Dict, event_guidance: Dict = None) -> str:
+        """ساخت پیام سیستم چند‌ایجنت - نسخه کامل"""
+        now = config.tehran_now()
+        msg = []
+        msg.append(f"<b>🤖 گزارش Multi-Agent System</b>")
+        msg.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M')} (تهران)")
+        msg.append(f"━━━━━━━━━━━━━━━━━━━━")
+
+        # خلاصه کلی
+        from core.data_models import Decision
+        longs = [d for d in decisions if d.decision == Decision.LONG]
+        shorts = [d for d in decisions if d.decision == Decision.SHORT]
+        waits = [d for d in decisions if d.decision == Decision.WAIT]
+        rejects = [d for d in decisions if d.decision == Decision.NO_TRADE]
+
+        msg.append(f"📊 <b>خلاصه بازار:</b>")
+        msg.append(f"  🔍 اسکن شده: {scan_summary.get('total_scanned', 0)} کوین")
+        msg.append(f"  ⏱ مدت: {round(scan_summary.get('duration_sec', 0), 1)}s")
+        msg.append(f"  🟢 لانگ: {len(longs)} | 🔴 شورت: {len(shorts)}")
+        msg.append(f"  🟡 WAIT: {len(waits)} | ⚪ رد: {len(rejects)}")
+        msg.append("")
+
+        # وضعیت کلی بازار
+        if len(longs) == 0 and len(shorts) == 0:
+            msg.append("📋 <b>وضعیت بازار:</b> شرایط معاملاتی واضح وجود ندارد")
+            msg.append("  مغز مرکزی هیچ فرصت باکیفیت تأیید نشده پیدا نکرد")
+            msg.append("  این رفتار طبیعی یک سیستم حرفه‌ای است - صبر کنید")
+            msg.append("")
+
+        # رویداد اقتصادی
+        if event_guidance and event_guidance.get('has_events'):
+            risk = event_guidance.get('risk_level', 'low')
+            risk_emoji = {'critical': '🚨', 'high': '⚠', 'medium': '📋', 'low': 'ℹ'}.get(risk, 'ℹ')
+            nearest = event_guidance.get('nearest_event', {})
+            msg.append(f"{risk_emoji} <b>رویداد پیش‌رو:</b> {nearest.get('name', '')}")
+            msg.append(f"  سطح ریسک: {risk} | تا {event_guidance.get('hours_until_nearest', 0):.1f} ساعت")
+            msg.append("")
+
+        return '\n'.join(msg)
+
+    @staticmethod
+    def _format_decision_full(d, rank: int) -> list:
+        """فرمت کامل یک تصمیم برای تلگرام"""
+        from core.data_models import Decision
+
+        lines = []
+        emoji = {
+            Decision.LONG: '🟢',
+            Decision.SHORT: '🔴',
+            Decision.WAIT: '🟡',
+            Decision.NO_TRADE: '⚪'
+        }.get(d.decision, '⚪')
+
+        lines.append(f"\n<b>{rank}. {emoji} {d.symbol} → {d.decision.value}</b>")
+        lines.append(f"   اعتماد مغز: {d.confidence:.0%} | قدرت: {d.signal_strength}")
+        lines.append("")
+
+        # پارامترهای معامله (فقط برای LONG/SHORT)
+        if d.entry_price > 0:
+            lines.append(f"📍 <b>نقطه ورود:</b> {d.entry_price}")
+            lines.append(f"🔴 <b>استاپ لاس:</b> {d.stop_loss}")
+            lines.append(f"🎯 <b>اهداف:</b>")
+            lines.append(f"   TP1: {d.target_1} | TP2: {d.target_2} | TP3: {d.target_3}")
+            lines.append(f"📊 <b>RR:</b> 1:{d.risk_reward:.1f}")
+            lines.append("")
+
+        # خلاصه هر ایجنت
+        lines.append(f"📋 <b>گزارش 6 ایجنت:</b>")
+        lines.append(f"   1️⃣ بازار: {d.market_scan_summary}")
+        lines.append(f"   2️⃣ بنیادی: {d.fundamental_summary}")
+        lines.append(f"   3️⃣ صعودی: {d.bullish_summary}")
+        lines.append(f"   4️⃣ نزولی: {d.bearish_summary}")
+        lines.append(f"   5️⃣ ریسک: {d.risk_summary}")
+        lines.append(f"   6️⃣ بک‌تست: {d.backtest_summary}")
+        lines.append("")
+
+        # دلایل موافق
+        if d.reasons_pro:
+            lines.append(f"✅ <b>دلایل موافق ({len(d.reasons_pro)} مورد):</b>")
+            for r in d.reasons_pro[:5]:
+                lines.append(f"   • {r}")
+
+        # دلایل مخالف
+        if d.reasons_con:
+            lines.append(f"❌ <b>دلایل مخالف ({len(d.reasons_con)} مورد):</b>")
+            for r in d.reasons_con[:5]:
+                lines.append(f"   • {r}")
+        lines.append("")
+
+        # استدلال کامل مغز مرکزی
+        if d.brain_reasoning:
+            lines.append(f"🧠 <b>استدلال مغز مرکزی:</b>")
+            # تقسیم متن طولانی به خطوط کوتاه‌تر
+            reasoning = d.brain_reasoning
+            if len(reasoning) > 500:
+                reasoning = reasoning[:500] + "..."
+            lines.append(f"   {reasoning}")
+
+        return lines
+
+    @staticmethod
+    def _format_decision(d, rank: int) -> list:
+        """فرمت‌بندی یک تصمیم برای تلگرام"""
+        from core.data_models import Decision
+
+        lines = []
+        emoji = {
+            Decision.LONG: '🟢',
+            Decision.SHORT: '🔴',
+            Decision.WAIT: '🟡',
+            Decision.NO_TRADE: '⚪'
+        }.get(d.decision, '⚪')
+
+        lines.append(f"\n<b>{rank}. {emoji} {d.symbol} | {d.decision.value}</b>")
+        lines.append(f"   اعتماد: {d.confidence:.0%} | قدرت: {d.signal_strength}")
+
+        if d.entry_price > 0:
+            lines.append(f"   📍 ورود: {d.entry_price}")
+            lines.append(f"   🔴 استاپ: {d.stop_loss}")
+            lines.append(f"   🎯 TP1: {d.target_1} | TP2: {d.target_2} | TP3: {d.target_3}")
+            lines.append(f"   📊 RR: 1:{d.risk_reward:.1f}")
+
+        # خلاصه ایجنت‌ها
+        lines.append(f"   📋 <b>خلاصه ایجنت‌ها:</b>")
+        lines.append(f"   • بازار: {d.market_scan_summary[:80]}")
+        lines.append(f"   • بنیادی: {d.fundamental_summary[:80]}")
+        lines.append(f"   • صعودی: {d.bullish_summary[:80]}")
+        lines.append(f"   • نزولی: {d.bearish_summary[:80]}")
+        lines.append(f"   • ریسک: {d.risk_summary[:80]}")
+        lines.append(f"   • بک‌تست: {d.backtest_summary[:80]}")
+
+        # دلایل
+        if d.reasons_pro:
+            lines.append(f"   ✅ <b>موافق:</b>")
+            for r in d.reasons_pro[:3]:
+                lines.append(f"      • {r}")
+        if d.reasons_con:
+            lines.append(f"   ❌ <b>مخالف:</b>")
+            for r in d.reasons_con[:3]:
+                lines.append(f"      • {r}")
+
+        # استدلال مغز
+        lines.append(f"   🧠 <b>تصمیم مغز:</b> {d.brain_reasoning[:150]}")
+
+        return lines
+
     # ----------------- ارسال گزارش کامل اسکنر -----------------
     def send_scan_report(self, pdf_path: str, excel_path: str, signals: Dict, scan_summary: Dict, event_guidance: Dict = None) -> bool:
         """
