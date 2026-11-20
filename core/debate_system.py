@@ -49,47 +49,54 @@ class DebateSystem:
         for round_num in range(self.max_rounds):
             logger.info(f"  💬 مناظره راند {round_num + 1}/{self.max_rounds} برای {base}...")
 
+            bull_adj = 0
+            bear_adj = 0
+
             # راند 1: Bullish به Bearish حمله می‌کند
-            bull_rebuttal = self._bullish_rebuts_bearish(
-                coin, bullish_report, bearish_report, debate_history
-            )
+            try:
+                bull_rebuttal = self._bullish_rebuts_bearish(
+                    coin, bullish_report, bearish_report, debate_history
+                )
 
-            if bull_rebuttal:
-                debate_history.append({
-                    'round': round_num + 1,
-                    'speaker': 'bullish',
-                    'argument': bull_rebuttal.get('argument', ''),
-                    'score_adjustment': bull_rebuttal.get('score_adjustment', 0),
-                })
+                if bull_rebuttal and bull_rebuttal.get('argument'):
+                    debate_history.append({
+                        'round': round_num + 1,
+                        'speaker': 'bullish',
+                        'argument': bull_rebuttal.get('argument', ''),
+                    })
 
-                # به‌روزرسانی امتیاز bearish (کاهش در صورت حجه قوی)
-                bear_adj = bull_rebuttal.get('bearish_score_adjustment', 0)
-                bearish_report.score = max(0, bearish_report.score + bear_adj)
-                if bear_adj < 0:
-                    bearish_report.reasons_con.append(f"رد مناظره: {bull_rebuttal.get('argument', '')[:60]}")
+                    bear_adj = bull_rebuttal.get('bearish_score_adjustment', 0)
+                    if isinstance(bear_adj, (int, float)):
+                        bearish_report.score = max(0, bearish_report.score + bear_adj)
+                        if bear_adj < 0:
+                            bearish_report.reasons_con.append(f"رد مناظره: {bull_rebuttal.get('argument', '')[:60]}")
+            except Exception as e:
+                logger.debug(f"مناظره bullish ناموفق: {e}")
 
             # راند 2: Bearish به Bullish حمله می‌کند
-            bear_rebuttal = self._bearish_rebuts_bullish(
-                coin, bearish_report, bullish_report, debate_history
-            )
+            try:
+                bear_rebuttal = self._bearish_rebuts_bullish(
+                    coin, bearish_report, bullish_report, debate_history
+                )
 
-            if bear_rebuttal:
-                debate_history.append({
-                    'round': round_num + 1,
-                    'speaker': 'bearish',
-                    'argument': bear_rebuttal.get('argument', ''),
-                    'score_adjustment': bear_rebuttal.get('score_adjustment', 0),
-                })
+                if bear_rebuttal and bear_rebuttal.get('argument'):
+                    debate_history.append({
+                        'round': round_num + 1,
+                        'speaker': 'bearish',
+                        'argument': bear_rebuttal.get('argument', ''),
+                    })
 
-                # به‌روزرسانی امتیاز bullish
-                bull_adj = bear_rebuttal.get('bullish_score_adjustment', 0)
-                bullish_report.score = max(0, bullish_report.score + bull_adj)
-                if bull_adj < 0:
-                    bullish_report.reasons_con.append(f"رد مناظره: {bear_rebuttal.get('argument', '')[:60]}")
+                    bull_adj = bear_rebuttal.get('bullish_score_adjustment', 0)
+                    if isinstance(bull_adj, (int, float)):
+                        bullish_report.score = max(0, bullish_report.score + bull_adj)
+                        if bull_adj < 0:
+                            bullish_report.reasons_con.append(f"رد مناظره: {bear_rebuttal.get('argument', '')[:60]}")
+            except Exception as e:
+                logger.debug(f"مناظره bearish ناموفق: {e}")
 
-            # اگر تغییر امتیاز کم است، مناظره را قطع کن
+            # اگر LLM کار نکرد یا تغییر کم است، قطع کن
             if abs(bull_adj) < 2 and abs(bear_adj) < 2:
-                logger.info(f"  💬 مناظره پایان یافت - تغییر کم")
+                logger.info(f"  💬 مناظره پایان یافت")
                 break
 
         # خلاصه مناظره
