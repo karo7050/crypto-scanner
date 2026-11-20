@@ -69,6 +69,16 @@ class Indicators:
         df['trend_bullish'] = (df['ema_fast'] > df['ema_slow']) & (df['close'] > df['ema_trend'])
         df['trend_bearish'] = (df['ema_fast'] < df['ema_slow']) & (df['close'] < df['ema_trend'])
 
+        # روند مومنتوم (RSI + MACD) - حتی اگر EMA خنثی باشد
+        # اگر RSI < 35 و MACD منفی → روند نزولی مومنتوم
+        df['momentum_bearish'] = (df['rsi'] < 35) & (df['macd_diff'] < 0)
+        # اگر RSI > 65 و MACD مثبت → روند صعودی مومنتوم
+        df['momentum_bullish'] = (df['rsi'] > 65) & (df['macd_diff'] > 0)
+
+        # روند ترکیبی: EMA یا مومنتوم
+        df['trend_bullish'] = df['trend_bullish'] | df['momentum_bullish']
+        df['trend_bearish'] = df['trend_bearish'] | df['momentum_bearish']
+
         return df
 
     # ----------------- خلاصه وضعیت فعلی -----------------
