@@ -21,6 +21,8 @@ from agents.bearish_analyst import BearishAnalystAgent
 from agents.risk_manager import RiskManagerAgent
 from agents.backtester import BacktesterAgent
 from core.brain import CentralBrain
+from core.debate_system import DebateSystem
+from core.memory_log import MemoryLog
 from core.data_models import FinalDecision, Decision, AgentReport
 from data_fetcher import DataFetcher
 from multi_tf import MultiTimeframeAnalyzer
@@ -45,6 +47,8 @@ class DecisionPipeline:
         self.risk_manager = RiskManagerAgent()
         self.backtester = BacktesterAgent()
         self.brain = CentralBrain()
+        self.debate = DebateSystem(max_rounds=2)
+        self.memory = MemoryLog()
 
     def analyze_coin(self, coin: Dict) -> FinalDecision:
         """
@@ -84,7 +88,14 @@ class DecisionPipeline:
         # Agent 4: Bearish Analyst
         bear_report = self.bearish_analyst.analyze(coin, analysis, ob_analysis, smc_data)
 
-        # تعیین جهت برتر
+        # 🔥 سیستم مناظره (Debate) - از TradingAgents الهام گرفته
+        logger.info(f"  💬 شروع مناظره Bullish vs Bearish...")
+        bull_report, bear_report, debate_summary = self.debate.debate(
+            coin, bull_report, bear_report
+        )
+        logger.info(f"  💬 مناظره پایان یافت: {debate_summary.get('summary', '')}")
+
+        # تعیین جهت برتر پس از مناظره
         direction = 'LONG' if bull_report.score > bear_report.score else 'SHORT'
         bull_result = bull_report.data.get('bullish_result', {})
         bear_result = bear_report.data.get('bearish_result', {})
@@ -107,13 +118,14 @@ class DecisionPipeline:
         # Agent 6: Backtester
         bt_report = self.backtester.backtest(coin, analysis, direction, entry, stop, targets)
 
-        # Central Brain: تصمیم نهایی
+        # Central Brain: تصمیم نهایی (با context حافظه)
+        memory_context = self.memory.get_memory_context(symbol)
         decision = self.brain.decide(
             coin, market_report, fund_report, bull_report,
             bear_report, risk_report, bt_report
         )
 
-        # ذخیره گزارش‌های ایجنت‌ها در تصمیم
+        # اضافه کردن debate summary و memory context به تصمیم
         decision.data = {
             'market_report': market_report,
             'fundamental_report': fund_report,
@@ -121,6 +133,8 @@ class DecisionPipeline:
             'bearish_report': bear_report,
             'risk_report': risk_report,
             'backtest_report': bt_report,
+            'debate_summary': debate_summary,
+            'memory_context': memory_context,
             'analysis': analysis,
             'smc_data': smc_data,
             'oi_data': market_report.data.get('oi_funding'),
@@ -128,6 +142,18 @@ class DecisionPipeline:
             'order_book': ob_analysis,
             'btc_data': market_report.data.get('btc_benchmark'),
         }
+
+        # ثبت تصمیم در حافظه (فقط LONG/SHORT)
+        if decision.decision in [Decision.LONG, Decision.SHORT] and decision.entry_price > 0:
+            self.memory.add_decision(
+                symbol=symbol,
+                direction=decision.decision.value,
+                entry=decision.entry_price,
+                stop=decision.stop_loss,
+                targets=[decision.target_1, decision.target_2, decision.target_3],
+                confidence=decision.confidence,
+                reasoning=decision.brain_reasoning,
+            )
 
         return decision
 
