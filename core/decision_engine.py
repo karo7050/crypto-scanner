@@ -296,22 +296,30 @@ class DecisionPipeline:
 
     def _filter_and_rank(self, decisions: List[FinalDecision]) -> List[FinalDecision]:
         """
-        فیلتر و رتبه‌بندی تصمیمات
+        فیلتر و رتبه‌بندی - حداقل 5 لانگ + 5 شورت
         """
-        # جدا کردن LONG و SHORT
         longs = [d for d in decisions if d.decision == Decision.LONG]
         shorts = [d for d in decisions if d.decision == Decision.SHORT]
         waits = [d for d in decisions if d.decision == Decision.WAIT]
         rejects = [d for d in decisions if d.decision == Decision.NO_TRADE]
 
-        # مرتب‌سازی بر اساس اعتماد
         longs.sort(key=lambda x: x.confidence, reverse=True)
         shorts.sort(key=lambda x: x.confidence, reverse=True)
 
-        # محدود کردن تعداد
         top_longs = longs[:config.TOP_LONG_COUNT]
         top_shorts = shorts[:config.TOP_SHORT_COUNT]
 
+        # اگر کمتر از 5 سیگنال داریم، WAIT‌های با اعتماد بالا را اضافه کن
+        if len(top_longs) < 5:
+            wait_long_candidates = [d for d in waits if 'bullish' in d.brain_reasoning.lower() or 'long' in d.brain_reasoning.lower()]
+            wait_long_candidates.sort(key=lambda x: x.confidence, reverse=True)
+            top_longs.extend(wait_long_candidates[:5 - len(top_longs)])
+
+        if len(top_shorts) < 5:
+            wait_short_candidates = [d for d in waits if 'bearish' in d.brain_reasoning.lower() or 'short' in d.brain_reasoning.lower()]
+            wait_short_candidates.sort(key=lambda x: x.confidence, reverse=True)
+            top_shorts.extend(wait_short_candidates[:5 - len(top_shorts)])
+
         logger.info(f"نتایج: {len(top_longs)} LONG, {len(top_shorts)} SHORT, {len(waits)} WAIT, {len(rejects)} REJECT")
 
-        return top_longs + top_shorts + waits[:2]  # فقط 2 WAIT برای اطلاع
+        return top_longs + top_shorts + waits[:3]
