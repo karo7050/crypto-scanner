@@ -38,12 +38,25 @@ class BearishAnalystAgent:
         try:
             # 1. بررسی روند
             trend = MultiTimeframeAnalyzer.check_trend_alignment(analysis)
+            trend_dirs = trend.get('trend_dirs', {})
 
+            # شرط تعدیل شده: شورت اگر 4H نزولی یا خنثی + 1H نزولی
+            dir_4h = trend_dirs.get('4h', '')
+            dir_1h = trend_dirs.get('1h', '')
+            dir_15m = trend_dirs.get('15m', '')
+
+            # اگر 4H نزولی است → شورت قوی
             if trend['alignment_score'] < 0:
                 result.is_bearish = True
-                result.confirmations.append(f"روند نزولی در چند تایم فریم ({abs(trend['alignment_pct']):.0f}%)")
+                result.confirmations.append(f"روند نزولی چند تایم فریم ({abs(trend['alignment_pct']):.0f}%)")
                 report.reasons_pro.append(f"هماهنگی روند نزولی: {trend['overall_bias']}")
-            elif trend['alignment_score'] > 5:
+            # اگر 4H خنثی اما 1H + 15M نزولی → شورت با احتیاط
+            elif dir_1h == 'نزولی' and dir_15m == 'نزولی':
+                result.is_bearish = True
+                result.confirmations.append("4H خنثی اما 1H و 15M نزولی - شورت با احتیاط")
+                report.reasons_pro.append("1H و 15M نزولی در بازار خنثی")
+            # اگر 4H و 1H هر دو صعودی →不适合 شورت
+            elif trend['alignment_score'] > 10:
                 result.is_bearish = False
                 report.reasons_con.append("روند صعودی -不适合 شورت")
                 result.confidence = 0.1
