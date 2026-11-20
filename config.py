@@ -91,11 +91,16 @@ STABLECOINS_BLACKLIST = {
     'EURS', 'EURT', 'AEUR', 'GBPT', 'XEUR', 'TRYB', 'BIDR', 'IDRT',
     # توکن‌های استیبل مالی
     'STUSD', 'USDJ', 'HUSD', 'USDV', 'USDF', 'RUSD', 'USDO',
-    # توکن‌های اهرمی/پایدار (Yield Bearing)
-    'SUSDS', 'USDS', 'PAXG', 'XAUT',  # XAUT و PAXG هم به طلا متصلند
     # توکن‌های استیک شده که با دارایی پایه هماهنگند (اختیاری)
     'STETH', 'BBSOL', 'CBETH', 'WBETH', 'RETH', 'STBTC', 'WBTC',
 }
+
+# ============ ارزهای اضافی برای اسکن (طلا، نقره، کالا) ============
+# این ارزها مستقل از مارکت کپ همیشه اسکن می‌شوند
+EXTRA_SCAN_COINS = [
+    {'symbol': 'PAXG', 'name': 'Pax Gold (Gold)', 'base': 'PAXG', 'market_cap': 500_000_000, 'current_price': 0, 'price_change_24h': 0, 'total_volume': 0},
+    {'symbol': 'XAUT', 'name': 'Tether Gold (Gold)', 'base': 'XAUT', 'market_cap': 500_000_000, 'current_price': 0, 'price_change_24h': 0, 'total_volume': 0},
+]
 
 # ============ تنظیمات تلگرام (اختیاری - برای ارسال خودکار) ============
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
