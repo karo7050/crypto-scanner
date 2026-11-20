@@ -48,37 +48,37 @@ class FundamentalAnalystAgent:
             news_data = NewsAnalyzer.get_news_for_coin(base, name)
 
             # 2. تحلیل اخبار با LLM (به‌جای keyword matching)
-            if news_data and news_data.get('top_news'):
-                llm_analysis = self._analyze_news_with_llm(base, news_data.get('top_news', []))
+            if news_data:
+                result.news_count = news_data.get('total_news', 0)
+                result.positive_news = news_data.get('positive_count', 0)
+                result.negative_news = news_data.get('negative_count', 0)
+                result.news_sentiment = news_data.get('sentiment_score', 0) / 100
 
-                if llm_analysis:
-                    result.news_sentiment = llm_analysis.get('sentiment', 0)
-                    result.news_count = news_data.get('total_news', 0)
-                    result.positive_news = llm_analysis.get('positive_count', 0)
-                    result.negative_news = llm_analysis.get('negative_count', 0)
+                # همیشه اخبار در گزارش نمایش داده شود
+                top_news = news_data.get('top_news', [])
+                if top_news:
+                    result.key_factors.append(f"اخبار اخیر: {len(top_news)} مورد")
+                    for news in top_news[:3]:
+                        title = news.get('title', '')[:60]
+                        source = news.get('source', '')
+                        sentiment = news.get('sentiment', '')
+                        result.key_factors.append(f"[{source}] {title} ({sentiment})")
 
-                    # فاکتورهای کلیدی از LLM
-                    key_factors = llm_analysis.get('key_factors', [])
-                    result.key_factors.extend(key_factors[:3])
+                # تلاش با LLM برای تحلیل عمیق‌تر
+                if top_news:
+                    llm_analysis = self._analyze_news_with_llm(base, top_news)
+                    if llm_analysis:
+                        result.news_sentiment = llm_analysis.get('sentiment', result.news_sentiment)
+                        result.positive_news = llm_analysis.get('positive_count', result.positive_news)
+                        result.negative_news = llm_analysis.get('negative_count', result.negative_news)
+                        report.data['llm_news_analysis'] = llm_analysis
 
-                    # هشدارها
-                    warnings = llm_analysis.get('warnings', [])
-                    result.warnings.extend(warnings[:2])
+                if result.news_sentiment > 0.3:
+                    report.reasons_pro.append(f"اخبار مثبت (sentiment: {result.news_sentiment:.2f})")
+                elif result.news_sentiment < -0.3:
+                    report.reasons_con.append(f"اخبار منفی (sentiment: {result.news_sentiment:.2f})")
 
-                    if result.news_sentiment > 0.3:
-                        report.reasons_pro.append(f"اخبار مثبت (sentiment: {result.news_sentiment:.2f})")
-                    elif result.news_sentiment < -0.3:
-                        report.reasons_con.append(f"اخبار منفی (sentiment: {result.news_sentiment:.2f})")
-
-                    report.data['llm_news_analysis'] = llm_analysis
-                else:
-                    # fallback به keyword analysis
-                    result.news_sentiment = news_data.get('sentiment_score', 0) / 100
-                    result.news_count = news_data.get('total_news', 0)
-                    result.positive_news = news_data.get('positive_count', 0)
-                    result.negative_news = news_data.get('negative_count', 0)
-
-            report.data['news'] = news_data
+                report.data['news'] = news_data
 
             # 3. رویدادهای اقتصادی
             events = self.calendar.get_upcoming_events(hours_ahead=24)
