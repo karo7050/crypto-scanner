@@ -28,6 +28,7 @@ from data_fetcher import DataFetcher
 from multi_tf import MultiTimeframeAnalyzer
 from liquidity import LiquidityAnalyzer
 from smc_analyzer import SMCAnalyzer
+from price_action import PriceActionAnalyzer, InverseTrendDetector
 import config
 import logging
 import time
@@ -213,39 +214,77 @@ class DecisionPipeline:
 
     def _quick_scan(self, coin: Dict) -> float:
         """
-        اسکن سریع بدون LLM - فقط Rule-Based
-        برای پیش‌فیلتر کردن کوین‌ها
+        اسکن سریع - شامل:
+        - روند چند تایم فریم
+        - SMC
+        - پرایس اکشن
+        - روند عکس نسبت به BTC
+        - حجم
         """
         symbol = coin['symbol']
         score = 0
 
         try:
-            # دریافت داده سریع
             timeframes_data = self.fetcher.fetch_all_timeframes(symbol)
             if len(timeframes_data) < 3:
                 return 0
 
             analysis = MultiTimeframeAnalyzer.analyze_all(timeframes_data)
 
-            # امتیاز سریع بر اساس روند
+            # 1. روند
             trend = MultiTimeframeAnalyzer.check_trend_alignment(analysis)
             score += abs(trend.get('alignment_score', 0)) * 3
 
-            # SMC
+            # 2. SMC
             smc_data = SMCAnalyzer.analyze_multi_tf(timeframes_data)
             if smc_data.get('available'):
                 score += abs(smc_data.get('combined_score', 0)) * 5
 
-            # حجم
+            # 3. پرایس اکشن (الگوهای کندلی)
+            df_1h = timeframes_data.get('1h')
+            df_15m = timeframes_data.get('15m')
+
+            if df_1h is not None:
+                pa_1h = PriceActionAnalyzer.analyze(df_1h)
+                if pa_1h.get('available'):
+                    score += abs(pa_1h.get('score', 0)) * 3
+                    # الگوهای قوی امتیاز بیشتر
+                    for pattern in pa_1h.get('patterns', []):
+                        if pattern.get('strength') == 'strong':
+                            score += 5
+
+            if df_15m is not None:
+                pa_15m = PriceActionAnalyzer.analyze(df_15m)
+                if pa_15m.get('available'):
+                    score += abs(pa_15m.get('score', 0)) * 2
+
+            # 4. روند عکس نسبت به BTC
+            btc_pair_data = timeframes_data.get('_btc_pair')
+            if btc_pair_data:
+                from btc_benchmark import BTCBenchmarkAnalyzer
+                btc_data = BTCBenchmarkAnalyzer.analyze_btc_pair(btc_pair_data)
+                if btc_data.get('available'):
+                    btc_score = btc_data.get('btc_score', 0)
+                    # ارز قوی‌تر از BTC در بازار نزولی = امتیاز بالا
+                    if btc_score > 0:
+                        score += btc_score * 8  # وزن بالا برای روند عکس
+
+                    # تشخیص روند عکس
+                    inverse = InverseTrendDetector.detect(coin, btc_data, market_bearish=True)
+                    if inverse.get('is_inverse'):
+                        score += inverse.get('strength', 0) * 5
+                        logger.info(f"    ⚡ {coin['base']}: روند عکس! {inverse.get('reason', '')}")
+
+            # 5. حجم
             vol_entry = MultiTimeframeAnalyzer.analyze_volume_entry(analysis)
             if vol_entry:
                 score += vol_entry.get('entry_score', 0) * 2
 
-            # تغییر قیمت
+            # 6. تغییر قیمت
             price_change = coin.get('price_change_24h', 0)
             score += min(abs(price_change), 10)
 
-            # ساختار
+            # 7. ساختار
             structure = MultiTimeframeAnalyzer.analyze_structure(analysis)
             score += abs(structure.get('total_phase_score', 0)) * 3
 
