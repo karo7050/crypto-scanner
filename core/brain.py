@@ -191,7 +191,7 @@ Profit Factor: {backtest_report.data.get('backtest_result', {}).get('profit_fact
         return prompt
 
     def _fallback_decide(self, coin, market, fund, bull, bear, risk, bt) -> FinalDecision:
-        """تصمیم‌گیری fallback - تعدیل شده (کمتر سخت‌گیرانه)"""
+        """تصمیم‌گیری fallback - کمتر محافظه‌کارانه برای سیگنال‌های بیشتر"""
         decision = FinalDecision(symbol=coin['symbol'])
 
         bull_score = bull.score
@@ -199,31 +199,24 @@ Profit Factor: {backtest_report.data.get('backtest_result', {}).get('profit_fact
         risk_approved = risk.data.get('risk_assessment', {}).get('approved', False)
         bt_wr = bt.data.get('backtest_result', {}).get('win_rate', 0)
 
-        # آستانه کمتر (8 به‌جای 10)
-        if abs(bull_score - bear_score) < 8:
+        # آستانه کمتر (5 به‌جای 8)
+        if abs(bull_score - bear_score) < 5:
             decision.decision = Decision.WAIT
             decision.confidence = 0.3
         elif bull_score > bear_score:
-            # ریسک تأیید نشده → WAIT (نه NO_TRADE)
             if not risk_approved:
                 decision.decision = Decision.WAIT
                 decision.confidence = 0.4
-            elif bt_wr >= 35:  # آستانه کمتر (35 به‌جای 40)
+            else:
                 decision.decision = Decision.LONG
                 decision.confidence = min(bull_score / 100, 1.0)
-            else:
-                decision.decision = Decision.WAIT
-                decision.confidence = 0.4
         else:
             if not risk_approved:
                 decision.decision = Decision.WAIT
                 decision.confidence = 0.4
-            elif bt_wr >= 35:
+            else:
                 decision.decision = Decision.SHORT
                 decision.confidence = min(bear_score / 100, 1.0)
-            else:
-                decision.decision = Decision.WAIT
-                decision.confidence = 0.4
 
         decision.brain_reasoning = f"تصمیم fallback: {decision.decision.value} (LLM در دسترس نبود)"
         decision.final_analysis = decision.brain_reasoning
