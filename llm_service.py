@@ -21,65 +21,65 @@ class LLMService:
     def __init__(self):
         self.cli_path = 'z-ai'
         self.model = 'glm-4-plus'
-        self.max_retries = 2
-        self.timeout = 60  # ثانیه
+        self.max_retries = 3
+        self.timeout = 60
+        self.last_call_time = 0
+        self.min_delay = 3  # حداقل 3 ثانیه بین فراخوانی‌ها
 
     def chat(self, prompt: str, system: str = "") -> Optional[str]:
-        """
-        ارسال درخواست chat به GLM-4
-        برمی‌گرداند: متن پاسخ یا None در صورت خطا
-        """
+        """ارسال درخواست chat به GLM-4 با تأخیر"""
+        import time as _time
+
+        # تأخیر بین فراخوانی‌ها
+        elapsed = _time.time() - self.last_call_time
+        if elapsed < self.min_delay:
+            _time.sleep(self.min_delay - elapsed)
+
         for attempt in range(self.max_retries):
             try:
-                # ایجاد فایل موقت برای خروجی
+                self.last_call_time = _time.time()
+
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
                     output_path = f.name
 
-                # ساخت دستور
                 cmd = [self.cli_path, 'chat']
-                cmd.extend(['-p', prompt])
+                cmd.extend(['-p', prompt[:8000]])  # محدودیت طول prompt
                 if system:
-                    cmd.extend(['-s', system])
+                    cmd.extend(['-s', system[:2000]])
                 cmd.extend(['-o', output_path])
 
-                # اجرای دستور
                 result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    env={**os.environ}
+                    cmd, capture_output=True, text=True,
+                    timeout=self.timeout, env={**os.environ}
                 )
 
-                # خواندن خروجی
                 if os.path.exists(output_path):
                     with open(output_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
-
-                    # پاک کردن فایل موقت
                     os.unlink(output_path)
 
-                    # استخراج متن پاسخ
                     choices = data.get('choices', [])
                     if choices:
                         content = choices[0].get('message', {}).get('content', '')
                         if content:
                             return content
 
-                logger.warning(f"تلاش {attempt+1} ناموفق - خروجی خالی")
-            except subprocess.TimeoutExpired:
-                logger.warning(f"تایم‌اوت در تلاش {attempt+1}")
-            except Exception as e:
-                logger.warning(f"خطا در تلاش {attempt+1}: {e}")
+                logger.warning(f"LLM تلاش {attempt+1} ناموفق - خروجی خالی")
+                _time.sleep(2)  # تأخیر اضافی قبل از retry
 
-            # پاک کردن فایل موقت در صورت خطا
+            except subprocess.TimeoutExpired:
+                logger.warning(f"LLM تایم‌اوت تلاش {attempt+1}")
+                _time.sleep(3)
+            except Exception as e:
+                logger.warning(f"LLM خطا تلاش {attempt+1}: {e}")
+                _time.sleep(2)
+
             if 'output_path' in locals() and os.path.exists(output_path):
                 try:
                     os.unlink(output_path)
                 except Exception:
                     pass
 
-        logger.error("همه تلاش‌ها ناموفق بود")
         return None
 
     def chat_json(self, prompt: str, system: str = "") -> Optional[Dict]:
