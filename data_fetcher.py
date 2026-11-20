@@ -163,6 +163,24 @@ class DataFetcher:
                 })
 
         logger.info(f"کوین‌های قابل معامله در {self.exchange_id.title()}: {len(matched)}")
+
+        # اضافه کردن ارزهای طلا/نقره از config
+        for extra_coin in config.EXTRA_SCAN_COINS:
+            exchange_symbol = f"{extra_coin['base']}/USDT"
+            if exchange_symbol in exchange_symbols and extra_coin['base'] not in [c['base'] for c in matched]:
+                # دریافت قیمت فعلی
+                try:
+                    ticker = self.fetch_ticker(exchange_symbol)
+                    if ticker:
+                        extra_coin['current_price'] = ticker.get('last', 0)
+                        extra_coin['price_change_24h'] = ticker.get('percentage', 0)
+                        extra_coin['total_volume'] = ticker.get('quoteVolume', 0)
+                        extra_coin['symbol'] = exchange_symbol
+                        matched.append(extra_coin)
+                        logger.info(f"ارز اضافی اضافه شد: {extra_coin['base']}")
+                except Exception as e:
+                    logger.debug(f"خطا در دریافت {extra_coin['base']}: {e}")
+
         return matched[:config.MAX_COINS_TO_SCAN]
 
     def _fallback_top_volume_coins(self) -> List[Dict]:
