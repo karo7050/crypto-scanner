@@ -39,15 +39,24 @@ class BullishAnalystAgent:
         try:
             # 1. بررسی روند چند تایم فریم
             trend = MultiTimeframeAnalyzer.check_trend_alignment(analysis)
+            trend_dirs = trend.get('trend_dirs', {})
+            dir_4h = trend_dirs.get('4h', '')
+            dir_1h = trend_dirs.get('1h', '')
+            dir_15m = trend_dirs.get('15m', '')
 
-            # فقط اگر روند صعودی یا خنثی-صعودی است
+            # شرط تعدیل شده: لانگ اگر 4H صعودی یا خنثی + 1H صعودی
             if trend['alignment_score'] > 0:
                 result.is_bullish = True
-                result.confirmations.append(f"روند صعودی در چند تایم فریم ({trend['alignment_pct']:.0f}%)")
+                result.confirmations.append(f"روند صعودی چند تایم فریم ({trend['alignment_pct']:.0f}%)")
                 report.reasons_pro.append(f"هماهنگی روند صعودی: {trend['overall_bias']}")
-            elif trend['alignment_score'] < -5:
+            # اگر 4H خنثی اما 1H + 15M صعودی → لانگ با احتیاط
+            elif dir_1h == 'صعودی' and dir_15m == 'صعودی':
+                result.is_bullish = True
+                result.confirmations.append("4H خنثی اما 1H و 15M صعودی - لانگ با احتیاط")
+                report.reasons_pro.append("1H و 15M صعودی در بازار خنثی")
+            elif trend['alignment_score'] < -10:
                 result.is_bullish = False
-                report.reasons_con.append(f"روند نزولی -不适合 لانگ")
+                report.reasons_con.append("روند نزولی قوی -不适合 لانگ")
                 result.confidence = 0.1
                 report.score = 10
                 report.data['bullish_result'] = result.__dict__
