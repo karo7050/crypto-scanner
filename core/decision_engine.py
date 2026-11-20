@@ -159,18 +159,44 @@ class DecisionPipeline:
 
     def analyze_market(self, coins: List[Dict]) -> List[FinalDecision]:
         """
-        تحلیل کل بازار و برگرداندن تصمیمات
+        تحلیل بازار با پیش‌فیلتر:
+        1. همه کوین‌ها با Rule-Based سریع اسکن شوند
+        2. فقط 15 کوین برتر → LLM (مناظره + مغز)
+        3. کاهش فراخوانی LLM از 200 به 45
         """
         decisions = []
+        pre_filtered = []
         total = len(coins)
 
+        # مرحله 1: پیش‌فیلتر سریع (بدون LLM)
+        logger.info(f"مرحله 1: پیش‌فیلتر {total} کوین (بدون LLM)...")
         for i, coin in enumerate(coins, 1):
             try:
-                logger.info(f"[{i}/{total}] {coin['base']}")
+                quick_score = self._quick_scan(coin)
+                if quick_score > 15:  # فقط امیدوارترین‌ها
+                    pre_filtered.append((coin, quick_score))
+                    logger.info(f"  [{i}/{total}] {coin['base']}: امتیاز اولیه {quick_score:.0f} → منتقل به LLM")
+                else:
+                    # رد سریع
+                    decision = FinalDecision(symbol=coin['symbol'], decision=Decision.NO_TRADE)
+                    decision.final_analysis = f"امتیاز اولیه پایین ({quick_score:.0f})"
+                    decisions.append(decision)
+            except Exception as e:
+                logger.warning(f"خطا در پیش‌فیلتر {coin['symbol']}: {e}")
+
+        # مرتب‌سازی بر اساس امتیاز
+        pre_filtered.sort(key=lambda x: x[1], reverse=True)
+        pre_filtered = pre_filtered[:15]  # فقط 15 کوین برتر
+
+        logger.info(f"مرحله 2: تحلیل LLM برای {len(pre_filtered)} کوین برتر...")
+
+        # مرحله 2: تحلیل کامل با LLM فقط برای کوین‌های منتخب
+        for i, (coin, quick_score) in enumerate(pre_filtered, 1):
+            try:
+                logger.info(f"  [{i}/{len(pre_filtered)}] {coin['base']} (امتیاز: {quick_score:.0f})")
                 decision = self.analyze_coin(coin)
                 decisions.append(decision)
 
-                # نمایش تصمیم
                 dir_emoji = {
                     Decision.LONG: '🟢',
                     Decision.SHORT: '🔴',
@@ -180,12 +206,54 @@ class DecisionPipeline:
                 logger.info(f"  {dir_emoji} {decision.decision.value} (اعتماد: {decision.confidence:.0%})")
 
                 time.sleep(0.3)
-
             except Exception as e:
                 logger.error(f"خطا در تحلیل {coin['symbol']}: {e}")
-                continue
 
         return self._filter_and_rank(decisions)
+
+    def _quick_scan(self, coin: Dict) -> float:
+        """
+        اسکن سریع بدون LLM - فقط Rule-Based
+        برای پیش‌فیلتر کردن کوین‌ها
+        """
+        symbol = coin['symbol']
+        score = 0
+
+        try:
+            # دریافت داده سریع
+            timeframes_data = self.fetcher.fetch_all_timeframes(symbol)
+            if len(timeframes_data) < 3:
+                return 0
+
+            analysis = MultiTimeframeAnalyzer.analyze_all(timeframes_data)
+
+            # امتیاز سریع بر اساس روند
+            trend = MultiTimeframeAnalyzer.check_trend_alignment(analysis)
+            score += abs(trend.get('alignment_score', 0)) * 3
+
+            # SMC
+            smc_data = SMCAnalyzer.analyze_multi_tf(timeframes_data)
+            if smc_data.get('available'):
+                score += abs(smc_data.get('combined_score', 0)) * 5
+
+            # حجم
+            vol_entry = MultiTimeframeAnalyzer.analyze_volume_entry(analysis)
+            if vol_entry:
+                score += vol_entry.get('entry_score', 0) * 2
+
+            # تغییر قیمت
+            price_change = coin.get('price_change_24h', 0)
+            score += min(abs(price_change), 10)
+
+            # ساختار
+            structure = MultiTimeframeAnalyzer.analyze_structure(analysis)
+            score += abs(structure.get('total_phase_score', 0)) * 3
+
+        except Exception as e:
+            logger.debug(f"خطا در quick scan {symbol}: {e}")
+            return 0
+
+        return score
 
     def _filter_and_rank(self, decisions: List[FinalDecision]) -> List[FinalDecision]:
         """
