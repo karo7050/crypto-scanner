@@ -191,31 +191,38 @@ Profit Factor: {backtest_report.data.get('backtest_result', {}).get('profit_fact
         return prompt
 
     def _fallback_decide(self, coin, market, fund, bull, bear, risk, bt) -> FinalDecision:
-        """تصمیم‌گیری fallback (rule-based) در صورت خطای LLM"""
+        """تصمیم‌گیری fallback - تعدیل شده (کمتر سخت‌گیرانه)"""
         decision = FinalDecision(symbol=coin['symbol'])
 
         bull_score = bull.score
         bear_score = bear.score
         risk_approved = risk.data.get('risk_assessment', {}).get('approved', False)
-        bt_approved = bt.data.get('backtest_result', {}).get('backtest_approved', False)
         bt_wr = bt.data.get('backtest_result', {}).get('win_rate', 0)
 
-        if abs(bull_score - bear_score) < 10:
+        # آستانه کمتر (8 به‌جای 10)
+        if abs(bull_score - bear_score) < 8:
             decision.decision = Decision.WAIT
             decision.confidence = 0.3
         elif bull_score > bear_score:
-            if risk_approved and bt_approved and bt_wr >= 40:
+            # ریسک تأیید نشده → WAIT (نه NO_TRADE)
+            if not risk_approved:
+                decision.decision = Decision.WAIT
+                decision.confidence = 0.4
+            elif bt_wr >= 35:  # آستانه کمتر (35 به‌جای 40)
                 decision.decision = Decision.LONG
                 decision.confidence = min(bull_score / 100, 1.0)
             else:
-                decision.decision = Decision.WAIT if bt_wr >= 40 else Decision.NO_TRADE
+                decision.decision = Decision.WAIT
                 decision.confidence = 0.4
         else:
-            if risk_approved and bt_approved and bt_wr >= 40:
+            if not risk_approved:
+                decision.decision = Decision.WAIT
+                decision.confidence = 0.4
+            elif bt_wr >= 35:
                 decision.decision = Decision.SHORT
                 decision.confidence = min(bear_score / 100, 1.0)
             else:
-                decision.decision = Decision.WAIT if bt_wr >= 40 else Decision.NO_TRADE
+                decision.decision = Decision.WAIT
                 decision.confidence = 0.4
 
         decision.brain_reasoning = f"تصمیم fallback: {decision.decision.value} (LLM در دسترس نبود)"
