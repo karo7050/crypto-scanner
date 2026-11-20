@@ -1,19 +1,20 @@
 """
-پایش ساعتی بازار - سبک و سریع
-Hourly Market Monitor
+پایش مداوم بازار - هر ساعت + هشدار تغییر
+Continuous Market Monitor
 
-بررسی کوین‌های watchlist در هر ساعت
-تشخیص تغییر وضعیت
-ارسال هشدار فقط در صورت تغییر واقعی
+بررسی می‌کند:
+- وضعیت watchlist
+- تغییر روند
+- نزدیک ورود
+- فعال‌سازی ورود
+- استاپ خوردن
+- target رسیدن
+- فرصت جدید
 
-این اسکریپت سبک است:
-- فقط کوین‌های watchlist را بررسی می‌کند
-- فقط قیمت و روند را چک می‌کند
-- LLM فقط در صورت تغییر واقعی فراخوانی می‌شود
+در صورت تغییر واقعی، هشدار فوری به تلگرام
 """
 import sys, os, time, logging
 
-# تنظیم منطقه زمانی تهران
 os.environ['TZ'] = 'Asia/Tehran'
 try:
     time.tzset()
@@ -28,6 +29,7 @@ from core.watchlist_manager import WatchlistManager
 from telegram_sender import TelegramSender
 from multi_tf import MultiTimeframeAnalyzer
 from indicators import Indicators
+from price_action import PriceActionAnalyzer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,39 +46,33 @@ logger = logging.getLogger(__name__)
 
 
 def run_hourly_monitor():
-    """
-    اجرای پایش ساعتی - سبک و سریع
-    """
+    """پایش مداوم بازار"""
     start_time = time.time()
     logger.info("=" * 50)
-    logger.info(f"پایش ساعتی بازار - {config.tehran_now_str()}")
+    logger.info(f"پایش مداوم بازار - {config.tehran_now_str()}")
     logger.info("=" * 50)
 
-    # بارگذاری watchlist
     wl = WatchlistManager()
     active_coins = wl.get_active_coins()
 
     if not active_coins:
-        logger.info("watchlist خالی است - چیزی برای پایش نیست")
+        logger.info("watchlist خالی است")
         return True
 
     logger.info(f"تعداد کوین‌های فعال: {len(active_coins)}")
 
-    # راه‌اندازی
     try:
         fetcher = DataFetcher()
     except Exception as e:
-        logger.error(f"خطا در اتصال به صرافی: {e}")
+        logger.error(f"خطا در اتصال: {e}")
         return False
 
     tg = TelegramSender()
     alerts_sent = 0
 
-    # بررسی هر کوین
     for coin in active_coins:
         symbol = coin['symbol']
         try:
-            # دریافت فقط قیمت فعلی (سبک)
             ticker = fetcher.fetch_ticker(symbol)
             if not ticker:
                 continue
@@ -85,7 +81,7 @@ def run_hourly_monitor():
             if current_price == 0:
                 continue
 
-            # دریافت روند 4H (فقط یک تایم فریم)
+            # روند 4H
             trend_4h = None
             try:
                 ohlcv_4h = fetcher.fetch_ohlcv(symbol, '4h', limit=60)
@@ -93,31 +89,42 @@ def run_hourly_monitor():
                     df_4h = Indicators.compute_all(ohlcv_4h)
                     state_4h = Indicators.get_current_state(df_4h)
                     trend_4h = state_4h.get('trend_dir', 'خنثی')
-            except Exception:
-                pass  # اگر داده 4H در دسترس نبود، بدون trend ادامه بده
 
-            # به‌روزرسانی و تشخیص تغییر
+                    # بررسی تغییر روند
+                    old_direction = coin.get('direction', '')
+                    if trend_4h == 'صعودی' and old_direction == 'SHORT':
+                        logger.info(f"  ⚠ تغییر روند! {symbol}: صعودی شد ولی SHORT هست")
+                    elif trend_4h == 'نزولی' and old_direction == 'LONG':
+                        logger.info(f"  ⚠ تغییر روند! {symbol}: نزولی شد ولی LONG هست")
+            except Exception:
+                pass
+
+            # به‌روزرسانی و هشدار
             alert = wl.update_coin_price(symbol, current_price, trend_4h)
 
             if alert:
-                logger.info(f"  ⚡ هشدار برای {symbol}: {alert['old_status']} → {alert['new_status']}")
+                logger.info(f"  ⚡ هشدار: {symbol} - {alert['old_status']} → {alert['new_status']}")
                 if tg.is_configured():
                     tg.send_message(alert['message'])
                     alerts_sent += 1
-                    time.sleep(1)  # جلوگیری از rate limit تلگرام
+                    time.sleep(1)
 
-            logger.info(f"  {symbol}: {current_price} | {trend_4h or 'N/A'} | {coin['status']}")
+            # نمایش وضعیت
+            entry = coin.get('entry_price', 0)
+            stop = coin.get('stop_loss', 0)
+            dist_to_entry = abs(current_price - entry) / entry * 100 if entry > 0 else 0
+
+            logger.info(f"  {symbol}: {current_price} | entry: {entry} | dist: {dist_to_entry:.1f}% | {coin['status']}")
 
             time.sleep(0.3)
 
         except Exception as e:
             logger.warning(f"خطا در پایش {symbol}: {e}")
 
-    # پاک‌سازی کوین‌های منقضی
     wl.cleanup_expired()
 
     duration = time.time() - start_time
-    logger.info(f"پایش کامل شد - {alerts_sent} هشدار ارسال شد - {duration:.1f}s")
+    logger.info(f"پایش کامل - {alerts_sent} هشدار - {duration:.1f}s")
     return True
 
 
