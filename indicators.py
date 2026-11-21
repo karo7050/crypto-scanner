@@ -69,15 +69,31 @@ class Indicators:
         df['trend_bullish'] = (df['ema_fast'] > df['ema_slow']) & (df['close'] > df['ema_trend'])
         df['trend_bearish'] = (df['ema_fast'] < df['ema_slow']) & (df['close'] < df['ema_trend'])
 
-        # روند مومنتوم (RSI + MACD) - حتی اگر EMA خنثی باشد
-        # اگر RSI < 35 و MACD منفی → روند نزولی مومنتوم
-        df['momentum_bearish'] = (df['rsi'] < 35) & (df['macd_diff'] < 0)
-        # اگر RSI > 65 و MACD مثبت → روند صعودی مومنتوم
-        df['momentum_bullish'] = (df['rsi'] > 65) & (df['macd_diff'] > 0)
+        # مومنتوم هوشمند:
+        # RSI < 25 = اشباع فروش شدید = احتمال بازگشت (نه نزولی!)
+        # RSI 25-40 = ضعیف اما نه اشباع = نزولی ملایم
+        # RSI 40-60 = خنثی
+        # RSI 60-75 = قوی اما نه اشباع = صعودی ملایم
+        # RSI > 75 = اشباع خرید = احتمال بازگشت (نه صعودی!)
 
-        # روند ترکیبی: EMA یا مومنتوم
+        # روند نزولی: EMA نزولی + RSI در محدوده 25-50 (نه اشباع فروش)
+        df['momentum_bearish'] = (df['ema_fast'] < df['ema_slow']) & (df['rsi'] > 25) & (df['rsi'] < 50) & (df['macd_diff'] < 0)
+        # روند صعودی: EMA صعودی + RSI در محدوده 50-75 (نه اشباع خرید)
+        df['momentum_bullish'] = (df['ema_fast'] > df['ema_slow']) & (df['rsi'] > 50) & (df['rsi'] < 75) & (df['macd_diff'] > 0)
+
+        # اشباع فروش = احتمال بازگشت صعودی (NOT short signal!)
+        df['oversold'] = df['rsi'] < 25  # احتمال bounce
+        # اشباع خرید = احتمال بازگشت نزولی (NOT long signal!)
+        df['overbought'] = df['rsi'] > 75  # احتمال dump
+
+        # روند ترکیبی
         df['trend_bullish'] = df['trend_bullish'] | df['momentum_bullish']
         df['trend_bearish'] = df['trend_bearish'] | df['momentum_bearish']
+
+        # اگر اشباع فروش است، روند نزولی را خنثی کن (احتمال بازگشت)
+        df.loc[df['oversold'], 'trend_bearish'] = False
+        # اگر اشباع خرید است، روند صعودی را خنثی کن (احتمال بازگشت)
+        df.loc[df['overbought'], 'trend_bullish'] = False
 
         return df
 
