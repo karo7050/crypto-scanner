@@ -268,8 +268,10 @@ class NewsAgent:
         # ذخیره اخبار برای فایل خلاصه
         self._save_for_summary(high_new + medium_new)
 
-        if high_new:
-            logger.info(f"✓ {len(high_new)} خبر فوری ارسال شد")
+        sent_count = min(len(high_new), 3)
+        if sent_count > 0:
+            self._save_seen()
+            logger.info(f"✓ {sent_count} خبر فوری ارسال شد ({len(high_new)} کل)")
         else:
             logger.info("خبر فوری جدیدی نیست")
 
