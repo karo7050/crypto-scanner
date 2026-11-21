@@ -231,45 +231,124 @@ class NewsAgent:
         return important
 
     def send_alerts(self, news_list: List[Dict]):
-        """ارسال هشدار اخبار مهم به تلگرام"""
+        """ارسال اخبار - هر خبر مهم جداگانه + بقیه در فایل خلاصه"""
         if not self.tg.is_configured():
-            logger.warning("تلگرام پیکربندی نشده")
             return
 
-        # فقط اخبار HIGH impact و جدید
-        high_impact = [n for n in news_list if n['impact'] == 'high' and n['hash'] not in self.seen_hashes]
+        # دسته‌بندی
+        high_new = [n for n in news_list if n['impact'] == 'high' and n['hash'] not in self.seen_hashes]
+        medium_new = [n for n in news_list if n['impact'] == 'medium' and n['hash'] not in self.seen_hashes]
 
-        # محدود به 5 خبر مهم
-        high_impact = high_impact[:5]
-
-        if not high_impact:
-            logger.info("خبر فوری جدیدی نیست")
-            return
-
-        # ترکیب در یک پیام
-        msg_parts = []
-        msg_parts.append(f"🚨 <b>اخبار فوری بازار</b>")
-        msg_parts.append(f"🕐 {config.tehran_now_str()}")
-        msg_parts.append(f"━━━━━━━━━━━━━━━━━━━━")
-
-        for i, news in enumerate(high_impact, 1):
+        # 1. اخبار HIGH را جداگانه و فوری بفرست (بدون لینک)
+        for news in high_new[:5]:
             self.seen_hashes.add(news['hash'])
-            dir_emoji = {'bearish': '🔴', 'bullish': '🟢', 'neutral': '⚪'}.get(news['direction'], '⚪')
+            msg = self._format_breaking_news(news)
+            self.tg.send_message(msg)
+            time.sleep(2)  # جلوگیری از rate limit
 
-            msg_parts.append(f"\n{i}. {dir_emoji} <b>{news['title'][:100]}</b>")
-            msg_parts.append(f"   📰 {news['source']} | تأثیر: {news['impact']}")
-            if news['keywords']:
-                msg_parts.append(f"   🔑 {', '.join(news['keywords'][:3])}")
-            if news['link']:
-                msg_parts.append(f"   🔗 {news['link'][:60]}")
+        # 2. اخبار MEDIUM را ذخیره کن برای فایل 4 ساعته
+        for news in medium_new:
+            self.seen_hashes.add(news['hash'])
 
-        msg_parts.append(f"\n━━━━━━━━━━━━━━━━━━━━")
-        msg_parts.append(f"📊 {len(high_impact)} خبر فوری")
+        # ذخیره اخبار برای فایل خلاصه
+        self._save_for_summary(high_new + medium_new)
 
-        msg = '\n'.join(msg_parts)
-        self.tg.send_message(msg)
-        self._save_seen()
-        logger.info(f"✓ {len(high_impact)} خبر فوری ارسال شد")
+        if high_new:
+            logger.info(f"✓ {len(high_new)} خبر فوری ارسال شد")
+        else:
+            logger.info("خبر فوری جدیدی نیست")
+
+    def _format_breaking_news(self, news: Dict) -> str:
+        """فرمت خبر فوری - بدون لینک، سریع و خلاصه"""
+        dir_emoji = {'bearish': '🔴', 'bullish': '🟢', 'neutral': '⚪'}.get(news['direction'], '⚪')
+
+        msg = []
+        msg.append(f"🚨 <b>خبر فوری</b> {dir_emoji}")
+        msg.append(f"━━━━━━━━━━━━━━━━━━━━")
+        msg.append(f"<b>{news['title']}</b>")
+        msg.append(f"")
+        msg.append(f"📰 {news['source']}")
+        msg.append(f"📊 جهت: {news['direction']} | تأثیر: بالا")
+        if news['keywords']:
+            msg.append(f"🔑 {', '.join(news['keywords'][:3])}")
+        msg.append(f"⏰ {config.tehran_now_str('%H:%M')}")
+
+        return '\n'.join(msg)
+
+    def _save_for_summary(self, news_list: List[Dict]):
+        """ذخیره اخبار برای فایل خلاصه 4 ساعته"""
+        summary_file = os.path.join(config.OUTPUT_DIR, 'news_summary.json')
+        existing = []
+        if os.path.exists(summary_file):
+            try:
+                import json
+                with open(summary_file, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = []
+
+        for news in news_list:
+            existing.append({
+                'title': news['title'],
+                'source': news['source'],
+                'link': news['link'],
+                'direction': news['direction'],
+                'impact': news['impact'],
+                'time': config.tehran_now_str(),
+            })
+
+        # فقط 100 خبر اخیر
+        existing = existing[-100:]
+
+        import json
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+
+    def send_summary_report(self):
+        """ارسال فایل خلاصه اخبار (هر 4 ساعت)"""
+        summary_file = os.path.join(config.OUTPUT_DIR, 'news_summary.json')
+        if not os.path.exists(summary_file):
+            logger.info("فایل خلاصه اخبار وجود ندارد")
+            return
+
+        import json
+        with open(summary_file, 'r', encoding='utf-8') as f:
+            news_list = json.load(f)
+
+        if not news_list:
+            return
+
+        # ساخت فایل متنی با سرتیتر + لینک
+        lines = []
+        lines.append("📋 خلاصه اخبار بازار کریپتو")
+        lines.append(f"🕐 {config.tehran_now_str()}")
+        lines.append(f"📊 تعداد: {len(news_list)} خبر")
+        lines.append("=" * 60)
+        lines.append("")
+
+        for i, news in enumerate(news_list, 1):
+            dir_emoji = {'bearish': '🔴', 'bullish': '🟢', 'neutral': '⚪'}.get(news.get('direction', ''), '⚪')
+            lines.append(f"{i}. {dir_emoji} {news['title']}")
+            lines.append(f"   📰 {news['source']} | {news.get('time', '')}")
+            if news.get('link'):
+                lines.append(f"   🔗 {news['link']}")
+            lines.append("")
+
+        lines.append("=" * 60)
+
+        # ذخیره فایل
+        report_file = os.path.join(config.OUTPUT_DIR, f'news_summary_{config.tehran_now().strftime("%Y%m%d_%H%M")}.txt')
+        with open(report_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+
+        # ارسال فایل به تلگرام
+        if self.tg.is_configured():
+            caption = f"📋 خلاصه اخبار - {len(news_list)} خبر\n🕐 {config.tehran_now_str()}"
+            self.tg.send_document(report_file, caption)
+
+        # پاک کردن فایل خلاصه
+        os.remove(summary_file)
+        logger.info(f"✓ فایل خلاصه اخبار ارسال شد: {len(news_list)} خبر")
 
     def _format_news_message(self, news: Dict) -> Optional[str]:
         """فرمت پیام خبر"""
@@ -298,8 +377,10 @@ class NewsAgent:
 
         return '\n'.join(msg)
 
-    def run(self):
-        """اجرای کامل اسکن اخبار"""
+    def run(self, send_summary=False):
+        """اجرای کامل اسکن اخبار
+        send_summary=True: فایل خلاصه 4 ساعته را هم بفرست
+        """
         start = time.time()
         logger.info("=" * 50)
         logger.info(f"ایجنت اخبار - {config.tehran_now_str()}")
@@ -316,15 +397,21 @@ class NewsAgent:
         # ارسال هشدارها
         self.send_alerts(important)
 
+        # ارسال فایل خلاصه (هر 4 ساعت)
+        if send_summary:
+            self.send_summary_report()
+
         duration = time.time() - start
         logger.info(f"اتمام - {duration:.1f}s")
         return True
 
 
 if __name__ == '__main__':
+    import sys
+    send_summary = '--summary' in sys.argv
     try:
         agent = NewsAgent()
-        agent.run()
+        agent.run(send_summary=send_summary)
     except KeyboardInterrupt:
         logger.info("متوقف شد")
         sys.exit(0)
