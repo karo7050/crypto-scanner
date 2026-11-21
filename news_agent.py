@@ -254,8 +254,8 @@ class NewsAgent:
         high_new = [n for n in news_list if n['impact'] == 'high' and n['hash'] not in self.seen_hashes]
         medium_new = [n for n in news_list if n['impact'] == 'medium' and n['hash'] not in self.seen_hashes]
 
-        # 1. اخبار HIGH را جداگانه و فوری بفرست (بدون لینک)
-        for news in high_new[:5]:
+        # 1. اخبار HIGH را جداگانه و فوری بفرست (بدون لینک) - حداکثر 3
+        for news in high_new[:3]:
             self.seen_hashes.add(news['hash'])
             msg = self._format_breaking_news(news)
             self.tg.send_message(msg)
