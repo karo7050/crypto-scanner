@@ -187,19 +187,34 @@ class NewsAgent:
             return []
 
     def _analyze_impact(self, title: str, summary: str) -> Dict:
-        """تحلیل تأثیر خبر"""
+        """تحلیل تأثیر خبر - فقط اخبار واقعا فوری HIGH"""
         text = (title + ' ' + summary).lower()
 
-        impact = 'low'
-        impact_keywords = []
+        high_keywords_found = []
+        medium_keywords_found = []
 
         for keyword, level in BREAKING_KEYWORDS.items():
             if keyword in text:
-                impact_keywords.append(keyword)
                 if level == 'high':
-                    impact = 'high'
-                elif level == 'medium' and impact != 'high':
-                    impact = 'medium'
+                    high_keywords_found.append(keyword)
+                elif level == 'medium':
+                    medium_keywords_found.append(keyword)
+
+        # HIGH فقط اگر 2+ کلمه کلیدی بالا داشته باشد یا کلمات خاصی باشد
+        truly_breaking = ['hack', 'exploit', 'ban', 'sec', 'lawsuit', 'etf approval',
+                         'rate cut', 'rate hike', 'fomc', 'delist', 'bankruptcy',
+                         'stolen', 'drained', 'crash', 'dump']
+
+        is_truly_breaking = any(k in text for k in truly_breaking)
+
+        if is_truly_breaking and len(high_keywords_found) >= 1:
+            impact = 'high'
+        elif len(high_keywords_found) >= 2:
+            impact = 'high'
+        elif len(medium_keywords_found) >= 2 or len(high_keywords_found) >= 1:
+            impact = 'medium'
+        else:
+            impact = 'low'
 
         # جهت تأثیر
         bearish_count = sum(1 for k in BEARISH_KEYWORDS if k in text)
@@ -215,7 +230,7 @@ class NewsAgent:
         return {
             'impact': impact,
             'direction': direction,
-            'keywords': impact_keywords[:5],
+            'keywords': (high_keywords_found + medium_keywords_found)[:5],
             'bearish_count': bearish_count,
             'bullish_count': bullish_count,
         }
