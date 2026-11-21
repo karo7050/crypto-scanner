@@ -276,13 +276,16 @@ class NewsAgent:
             logger.info("خبر فوری جدیدی نیست")
 
     def _format_breaking_news(self, news: Dict) -> str:
-        """فرمت خبر فوری - بدون لینک، سریع و خلاصه"""
+        """فرمت خبر فوری - ترجمه فارسی، بدون لینک"""
         dir_emoji = {'bearish': '🔴', 'bullish': '🟢', 'neutral': '⚪'}.get(news['direction'], '⚪')
+
+        # ترجمه عنوان به فارسی با LLM
+        fa_title = self._translate_to_farsi(news['title'])
 
         msg = []
         msg.append(f"🚨 <b>خبر فوری</b> {dir_emoji}")
         msg.append(f"━━━━━━━━━━━━━━━━━━━━")
-        msg.append(f"<b>{news['title']}</b>")
+        msg.append(f"<b>{fa_title}</b>")
         msg.append(f"")
         msg.append(f"📰 {news['source']}")
         msg.append(f"📊 جهت: {news['direction']} | تأثیر: بالا")
@@ -291,6 +294,21 @@ class NewsAgent:
         msg.append(f"⏰ {config.tehran_now_str('%H:%M')}")
 
         return '\n'.join(msg)
+
+    def _translate_to_farsi(self, text: str) -> str:
+        """ترجمه متن به فارسی با GLM-4"""
+        from llm_service import get_llm
+        llm = get_llm()
+
+        prompt = f"متن زیر را به فارسی ترجمه کن. فقط ترجمه را بفرست، هیچ چیز اضافی نگو:\n\n{text}"
+        system = "تو یک مترجم حرفه‌ای هستی. متن انگلیسی را به فارسی روان و دقیق ترجمه کن."
+
+        translated = llm.chat(prompt, system)
+
+        if translated and len(translated) > 5:
+            # اگر ترجمه ناموفق بود، متن اصلی را برگردان
+            return translated.strip()
+        return text  # fallback به متن اصلی
 
     def _save_for_summary(self, news_list: List[Dict]):
         """ذخیره اخبار برای فایل خلاصه 4 ساعته"""
@@ -345,7 +363,9 @@ class NewsAgent:
 
         for i, news in enumerate(news_list, 1):
             dir_emoji = {'bearish': '🔴', 'bullish': '🟢', 'neutral': '⚪'}.get(news.get('direction', ''), '⚪')
-            lines.append(f"{i}. {dir_emoji} {news['title']}")
+            # ترجمه عنوان
+            fa_title = self._translate_to_farsi(news['title'])
+            lines.append(f"{i}. {dir_emoji} {fa_title}")
             lines.append(f"   📰 {news['source']} | {news.get('time', '')}")
             if news.get('link'):
                 lines.append(f"   🔗 {news['link']}")
