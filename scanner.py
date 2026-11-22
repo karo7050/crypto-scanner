@@ -22,6 +22,8 @@ Unified Market Scanner
 import sys, os, json, logging, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from typing import Dict, List
+
 import config
 from data_fetcher import DataFetcher
 from multi_tf import MultiTimeframeAnalyzer
@@ -32,6 +34,7 @@ from price_action import PriceActionAnalyzer, InverseTrendDetector
 from volume_flow import VolumeFlowAnalyzer
 from oi_funding import OIFundingAnalyzer
 from btc_benchmark import BTCBenchmarkAnalyzer
+from coinalyze_data import CoinalyzeData
 from entry_exit import EntryExitCalculator
 from core.data_models import FinalDecision, Decision
 from core.watchlist_manager import WatchlistManager
@@ -87,7 +90,8 @@ class UnifiedScanner:
             # 6. Volume Flow
             flow_data = VolumeFlowAnalyzer.compute_flow(df_1h) if df_1h is not None else {}
 
-            # 7. OI + Funding
+            # 7. OI + Funding + Long/Short از Coinalyze (داده واقعی)
+            coinalyze_data = CoinalyzeData.get_current_data(base)
             oi_data = OIFundingAnalyzer.fetch_oi_and_funding(symbol)
 
             # 8. BTC benchmark
@@ -170,8 +174,39 @@ class UnifiedScanner:
                     short_score += min(abs(flow_score) * 5, 10)
                     reasons_pro.append(f"خروج پول ({flow_data.get('direction', '')})")
 
-            # --- OI + Funding (10 امتیاز) ---
-            if oi_data:
+            # --- OI + Funding + Long/Short از Coinalyze (15 امتیاز) ---
+            if coinalyze_data.get('available'):
+                funding_score = coinalyze_data.get('funding_score', 0)
+                ls_score = coinalyze_data.get('ls_score', 0)
+                oi_score = coinalyze_data.get('oi_score', 0)
+
+                # Funding
+                if funding_score > 0:
+                    long_score += min(funding_score * 3, 5)
+                    reasons_pro.append(f"Funding: {coinalyze_data.get('funding_signal', '')}")
+                elif funding_score < 0:
+                    short_score += min(abs(funding_score) * 3, 5)
+                    reasons_pro.append(f"Funding: {coinalyze_data.get('funding_signal', '')}")
+
+                # Long/Short Ratio (داده واقعی!)
+                if ls_score > 0:
+                    long_score += min(ls_score * 3, 5)
+                    reasons_pro.append(f"L/S: {coinalyze_data.get('ls_signal', '')}")
+                elif ls_score < 0:
+                    short_score += min(abs(ls_score) * 3, 5)
+                    reasons_pro.append(f"L/S: {coinalyze_data.get('ls_signal', '')}")
+
+                # OI
+                if oi_score > 0:
+                    long_score += min(oi_score, 3)
+                    short_score += min(oi_score, 3)  # OI بالا برای هر دو جهت خوب است
+                    reasons_pro.append(f"OI: {coinalyze_data.get('oi_signal', '')}")
+
+                # نمایش Long/Short در خلاصه
+                if coinalyze_data.get('long_ratio', 0) > 0:
+                    decision.risk_summary += f" | L/S: {coinalyze_data['long_ratio']:.0f}/{coinalyze_data['short_ratio']:.0f}"
+
+            elif oi_data:
                 funding_score = oi_data.get('funding_score', 0)
                 if funding_score > 0:
                     long_score += min(funding_score * 5, 10)
