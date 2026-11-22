@@ -174,37 +174,65 @@ class UnifiedScanner:
                     short_score += min(abs(flow_score) * 5, 10)
                     reasons_pro.append(f"خروج پول ({flow_data.get('direction', '')})")
 
-            # --- OI + Funding + Long/Short از Coinalyze (15 امتیاز) ---
+            # --- OI + Funding + Long/Short + Liquidations + Buy/Sell از Coinalyze (20 امتیاز) ---
             if coinalyze_data.get('available'):
                 funding_score = coinalyze_data.get('funding_score', 0)
                 ls_score = coinalyze_data.get('ls_score', 0)
                 oi_score = coinalyze_data.get('oi_score', 0)
+                oi_flow_score = coinalyze_data.get('oi_flow_score', 0)
+                liq_score = coinalyze_data.get('liq_score', 0)
+                vol_score = coinalyze_data.get('volume_score', 0)
 
-                # Funding
+                # Funding (5 امتیاز)
                 if funding_score > 0:
-                    long_score += min(funding_score * 3, 5)
+                    long_score += min(funding_score * 2, 5)
                     reasons_pro.append(f"Funding: {coinalyze_data.get('funding_signal', '')}")
                 elif funding_score < 0:
-                    short_score += min(abs(funding_score) * 3, 5)
+                    short_score += min(abs(funding_score) * 2, 5)
                     reasons_pro.append(f"Funding: {coinalyze_data.get('funding_signal', '')}")
 
-                # Long/Short Ratio (داده واقعی!)
+                # Long/Short Ratio (5 امتیاز) - داده واقعی!
                 if ls_score > 0:
-                    long_score += min(ls_score * 3, 5)
+                    long_score += min(ls_score * 2, 5)
                     reasons_pro.append(f"L/S: {coinalyze_data.get('ls_signal', '')}")
                 elif ls_score < 0:
-                    short_score += min(abs(ls_score) * 3, 5)
+                    short_score += min(abs(ls_score) * 2, 5)
                     reasons_pro.append(f"L/S: {coinalyze_data.get('ls_signal', '')}")
 
-                # OI
-                if oi_score > 0:
-                    long_score += min(oi_score, 3)
-                    short_score += min(oi_score, 3)  # OI بالا برای هر دو جهت خوب است
-                    reasons_pro.append(f"OI: {coinalyze_data.get('oi_signal', '')}")
+                # OI flow (3 امتیاز) - ورود/خروج پول
+                if oi_flow_score > 0:
+                    long_score += 3
+                    reasons_pro.append(f"OI: {coinalyze_data.get('oi_flow_signal', '')}")
+                elif oi_flow_score < 0:
+                    short_score += 3
+                    reasons_pro.append(f"OI: {coinalyze_data.get('oi_flow_signal', '')}")
 
-                # نمایش Long/Short در خلاصه
+                # Liquidations (2 امتیاز)
+                if liq_score > 0:
+                    long_score += 2
+                    reasons_pro.append(f"لیکوییداسیون: {coinalyze_data.get('liq_signal', '')}")
+                elif liq_score < 0:
+                    short_score += 2
+                    reasons_pro.append(f"لیکوییداسیون: {coinalyze_data.get('liq_signal', '')}")
+
+                # Buy/Sell Volume (3 امتیاز)
+                if vol_score > 0:
+                    long_score += 3
+                    reasons_pro.append(f"حجم: {coinalyze_data.get('volume_signal', '')}")
+                elif vol_score < 0:
+                    short_score += 3
+                    reasons_pro.append(f"حجم: {coinalyze_data.get('volume_signal', '')}")
+
+                # OI نقدینگی (2 امتیاز - برای هر دو جهت)
+                if oi_score > 0:
+                    long_score += min(oi_score, 2)
+                    short_score += min(oi_score, 2)
+
+                # نمایش در خلاصه
                 if coinalyze_data.get('long_ratio', 0) > 0:
                     decision.risk_summary += f" | L/S: {coinalyze_data['long_ratio']:.0f}/{coinalyze_data['short_ratio']:.0f}"
+                if coinalyze_data.get('oi_change_pct', 0) != 0:
+                    decision.risk_summary += f" | OI: {coinalyze_data['oi_change_pct']:+.1f}%"
 
             elif oi_data:
                 funding_score = oi_data.get('funding_score', 0)
