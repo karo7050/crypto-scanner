@@ -274,19 +274,18 @@ class UnifiedScanner:
             # ===== تصمیم =====
             score_diff = abs(long_score - short_score)
 
-            if score_diff < 10:
+            if score_diff < 5:
                 decision.decision = Decision.WAIT
                 decision.confidence = 0.3
                 decision.brain_reasoning = "اختلاف امتیاز کم - صبر کنید"
             elif long_score > short_score:
                 decision.decision = Decision.LONG
-                decision.confidence = min(long_score / 100, 1.0)
-                # محاسبه entry/stop/target
+                decision.confidence = min(long_score / 80 + 0.2, 1.0)  # اعتماد بالاتر
                 setup = EntryExitCalculator.calculate_long_setup(analysis, ob_analysis)
                 self._apply_setup(decision, setup)
             else:
                 decision.decision = Decision.SHORT
-                decision.confidence = min(short_score / 100, 1.0)
+                decision.confidence = min(short_score / 80 + 0.2, 1.0)  # اعتماد بالاتر
                 setup = EntryExitCalculator.calculate_short_setup(analysis, ob_analysis)
                 self._apply_setup(decision, setup)
 
