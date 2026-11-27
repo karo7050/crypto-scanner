@@ -23,6 +23,7 @@ import config
 from data_fetcher import DataFetcher
 from scanner import UnifiedScanner
 from brain import ReviewBrain
+from chart_generator import ChartGenerator
 from core.data_models import Decision
 from telegram_sender import TelegramSender
 from events_calendar import EconomicEventsCalendar
@@ -92,8 +93,36 @@ def run():
     logger.info(f"لانگ: {scan_summary['long_count']} | شورت: {scan_summary['short_count']}")
 
     if tg.is_configured():
+        # ارسال گزارش متنی
         tg.send_multi_agent_report(decisions, scan_summary, event_guidance)
-        logger.info("✓ گزارش ارسال شد")
+        logger.info("✓ گزارش متنی ارسال شد")
+
+        # تولید و ارسال نمودار برای سیگنال‌های LONG/SHORT
+        logger.info("گام 5b: تولید نمودارها...")
+        for d in decisions:
+            if d.decision in [Decision.LONG, Decision.SHORT] and d.entry_price > 0:
+                try:
+                    # دریافت داده برای نمودار
+                    coin_info = next((c for c in coins if c['symbol'] == d.symbol), None)
+                    if coin_info:
+                        tf_data = fetcher.fetch_all_timeframes(d.symbol)
+                        df_1h = tf_data.get('1h')
+                        if df_1h is not None:
+                            # دریافت Coinalyze data
+                            from coinalyze_data import CoinalyzeData
+                            ca_data = CoinalyzeData.get_current_data(coin_info['base'])
+
+                            # تولید نمودار
+                            chart_path = ChartGenerator.generate_chart(coin_info, d, df_1h, None, ca_data)
+                            if chart_path and os.path.exists(chart_path):
+                                # ارسال به تلگرام
+                                direction_emoji = '🟢' if d.decision == Decision.LONG else '🔴'
+                                caption = f"{direction_emoji} {d.symbol} | {d.decision.value} | اعتماد: {d.confidence:.0%}"
+                                tg.send_document(chart_path, caption)
+                                logger.info(f"  📊 نمودار {d.symbol} ارسال شد")
+                                time.sleep(1)
+                except Exception as e:
+                    logger.warning(f"خطا در نمودار {d.symbol}: {e}")
 
     # 7. ثبت در watchlist
     logger.info("گام 6: به‌روزرسانی watchlist...")
